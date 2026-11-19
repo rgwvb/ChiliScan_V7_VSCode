@@ -13,6 +13,22 @@ ChiliScan V7 - VS Code 專案
 5. 不要直接用瀏覽器開啟舊的 file:///index.html；請使用上面的 HTTP 預覽位址。
 6. 匯入 Excel 時需要網路連線以載入 SheetJS；CSV 可在離線時直接匯入。
 
+程式用途與作用：
+- ChiliScan 是純前端光譜資料分析工具，用於匯入辣椒或其他物件的 Excel / CSV 光譜量測資料。
+- 自動辨識「波長」欄與其左側相鄰的樣本光強欄。
+- 支援單一工作表分析及跨工作表疊加比較，可同時比較新鮮、蟲害、腐爛等平均資料。
+- 可設定分析波段、X/Y 軸刻度、曲線平滑方式，並以滑鼠查看各曲線數值。
+- 統計指定波段中的波峰波長、波峰強度、平均強度、最低強度及有效量測點數。
+- 可匯出特徵摘要 CSV 或指定波段原始數據 CSV。
+- 所有資料都在瀏覽器中處理，不會上傳至伺服器。
+
+程式區塊：
+- index.html：頁面結構、表單、統計卡、圖表、樣本清單及資料表。
+- css/style.css：全域樣式、控制元件、圖表區、跨工作表選擇與手機版響應式版面。
+- js/app.js：共用工具、檔案讀取、單一/跨工作表分析、特徵計算、Canvas繪圖及CSV匯出。
+- server.ps1：本機 HTTP 預覽伺服器。
+- .github/workflows/pages.yml：GitHub Actions 自動部署到 GitHub Pages。
+
 公開上架（GitHub Pages）：
 1. 在 GitHub 建立公開儲存庫，並將本資料夾中的網站檔案推送至 main 分支。
 2. 在儲存庫 Settings > Pages，將 Build and deployment 的 Source 設為 GitHub Actions。
