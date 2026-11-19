@@ -1,0 +1,12 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "啟動 ChiliScan 預覽",
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}\\server.ps1\"",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

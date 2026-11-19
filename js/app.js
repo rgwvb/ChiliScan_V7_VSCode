@@ -1,0 +1,127 @@
+const $=id=>document.getElementById(id);let crossSpecs=[],crossCache=new Map();let workbook=null,rows=[],headers=[],widx=-1,series=[],selected=new Set(),hover=null;const palette=['#60a5fa','#34d399','#fbbf24','#fb7185','#a78bfa','#22d3ee','#f472b6','#bef264','#f97316','#93c5fd'];
+function fmt(x,d=2){return Number.isFinite(x)?x.toLocaleString('zh-TW',{maximumFractionDigits:d}):'—'}
+function num(v){if(typeof v==='number')return Number.isFinite(v)?v:NaN;if(typeof v!=='string')return NaN;let s=v.trim().replace(/,/g,'');return s!==''&&Number.isFinite(Number(s))?Number(s):NaN}
+function parseSheet(name){const data=sheetToRows(workbook.Sheets[name]);if(!data.length)throw Error('工作表沒有資料');const head=data.findIndex(r=>r&&r.filter(v=>v!==null&&v!=='').length>=2);if(head<0)throw Error('找不到欄位標題');const rawHeaders=data[head],max=Math.max(...data.slice(head,head+5).map(r=>r.length));headers=Array.from({length:max},(_,i)=>String(rawHeaders[i]??`欄位${i+1}`).trim()||`欄位${i+1}`);rows=data.slice(head+1).filter(r=>r&&r.some(v=>v!==null&&v!==''));let opts=headers.map((h,i)=>`<option value="${i}">${escapeHtml(h)}（第${i+1}欄）</option>`).join('');$('wave').innerHTML=opts;$('wave').disabled=false;let likely=headers.findIndex(h=>/波長|wavelength|^nm$/i.test(h));if(likely<0){likely=headers.findIndex((h,i)=>{const a=rows.slice(0,100).map(r=>num(r[i])).filter(Number.isFinite);return a.length>10&&a.filter(v=>v>=200&&v<=1100).length/a.length>.85&&a.slice(1).filter((v,j)=>v>a[j]).length/a.length>.8})}widx=likely>=0?likely:0;$('wave').value=String(widx);if($('compareMode').value==='single')analyze()}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function parseCsv(text){
+ const rows=[];
+ let row=[],cell='',quoted=false;
+ text=text.replace(/^\uFEFF/, '');
+ for(let i=0;i<text.length;i++){
+  const c=text[i];
+  if(c==='"' ){
+   if(quoted&&text[i+1]==='"'){cell+='"';i++}else quoted=!quoted;
+  }else if(c===','&&!quoted){row.push(cell);cell=''}
+  else if((c==='\n'||c==='\r')&&!quoted){
+   if(c==='\r'&&text[i+1]==='\n')i++;
+   row.push(cell);rows.push(row);row=[];cell='';
+  }else cell+=c;
+ }
+ row.push(cell);rows.push(row);
+ return rows;
+}
+function sheetToRows(sheet){
+ if(sheet&&Array.isArray(sheet._rows))return sheet._rows;
+ if(typeof XLSX==='undefined'||!XLSX.utils)return [];
+ return XLSX.utils.sheet_to_json(sheet,{header:1,defval:null,raw:true});
+}
+function analyze(){
+ if($('compareMode').value==='cross'){analyzeCross();return}
+ let from=num($('from').value),to=num($('to').value);
+ if(!Number.isFinite(from)||!Number.isFinite(to)||from>=to){$('status').textContent='請輸入有效的波長範圍';return}
+ widx=Number($('wave').value);
+ const waveCols=headers.map((h,i)=>/^(波長\s*\d*|wavelength\s*\d*|nm)$/i.test(h)?i:-1).filter(i=>i>=0);
+ if(!waveCols.length)waveCols.push(widx);
+ const oldNames=new Set([...selected].map(i=>series[i]?.name));
+ const counts={};series=[];
+ for(let i=0;i<headers.length;i++){
+  if(waveCols.includes(i))continue;
+  const axis=waveCols.filter(j=>j<i).at(-1)??widx;
+  const data=rows.map(r=>({w:num(r[axis]),y:num(r[i])})).filter(p=>Number.isFinite(p.w)&&Number.isFinite(p.y)&&p.w>=from&&p.w<=to).sort((a,b)=>a.w-b.w);
+  if(!data.length)continue;
+  const base=headers[i];counts[base]=(counts[base]||0)+1;
+  series.push({name:base+(counts[base]>1?' ('+counts[base]+')':''),i,data});
+ }
+ selected=new Set(series.map((v,i)=>oldNames.size?(oldNames.has(v.name)?i:-1):(i<Math.min(3,series.length)?i:-1)).filter(i=>i>=0));
+ if(!selected.size&&series.length)selected.add(0);
+ const waveCount=new Set(series.flatMap(s=>s.data.map(p=>p.w))).size;
+ $('status').innerHTML=series.length?`<span class="ok">✓ 已辨識 ${waveCols.length} 組波長欄、${series.length} 個光譜樣本；${waveCount} 個不同波長位置，分析範圍 ${fmt(from)}–${fmt(to)} nm。</span>`:'<span class="warning">指定波段內沒有可用樣本，請檢查工作表或波長欄。</span>';
+ $('all').disabled=!series.length;$('export').disabled=!series.length;$('exportRaw').disabled=!series.length;render()
+}
+function readSheetSeries(name){
+ if(crossCache.has(name))return crossCache.get(name);
+ const sh=workbook?.Sheets[name];if(!sh)return {error:'工作表不存在',items:[]};
+ const arr=sheetToRows(sh);
+ const head=arr.findIndex(r=>r&&r.filter(v=>v!==null&&v!==''&&v!==undefined).length>=2);
+ if(head<0)return {error:'工作表沒有可用的欄位資料',items:[]};
+ const max=Math.max(...arr.slice(head,head+5).map(r=>r?.length||0));
+ const hs=Array.from({length:max},(_,i)=>String(arr[head][i]??`欄位${i+1}`).trim()||`欄位${i+1}`);
+ const rs=arr.slice(head+1).filter(r=>r&&r.some(v=>v!==null&&v!==''));
+ let axes=hs.map((h,i)=>/^(波長\s*\d*|wavelength\s*\d*|nm)$/i.test(h)?i:-1).filter(i=>i>=0);
+ if(!axes.length){const found=hs.findIndex((h,i)=>{let a=rs.slice(0,150).map(r=>num(r[i])).filter(Number.isFinite);return a.length>=8&&a.filter(v=>v>=200&&v<=1100).length/a.length>.8&&a.slice(1).filter((v,j)=>v>a[j]).length/a.length>.75});if(found>=0)axes=[found]}
+ if(!axes.length)return {error:'找不到波長欄',items:[]};
+ let counts={},items=[];
+ hs.forEach((h,i)=>{if(axes.includes(i))return;const axis=axes.filter(j=>j<i).at(-1);if(axis===undefined)return;
+ const data=rs.map(r=>({w:num(r[axis]),y:num(r[i])})).filter(p=>Number.isFinite(p.w)&&Number.isFinite(p.y)).sort((a,b)=>a.w-b.w);
+ if(!data.length)return;counts[h]=(counts[h]||0)+1;
+ items.push({key:name+'::'+i,name:h+(counts[h]>1?' ('+counts[h]+')':''),sheet:name,column:i,axis:hs[axis],data});
+ });const out={items,axes:axes.length,error:items.length?'':'找不到有效光譜數據'};crossCache.set(name,out);return out;
+}
+function populateCross(){
+ if(!workbook)return;
+ const preferred=['新鮮平均','蟲害平均','腐爛平均'];
+ const hasPreferred=preferred.some(x=>workbook.SheetNames.includes(x));
+ const html=workbook.SheetNames.map(name=>{
+  const parsed=readSheetSeries(name),isDefault=hasPreferred?preferred.includes(name):name===$('sheet').value;
+  const options=parsed.items.map((item,i)=>`<label><input type="checkbox" class="cross-sample" data-sheet="${escapeHtml(name)}" data-col="${item.column}" ${isDefault&&i===0?'checked':''}>${escapeHtml(item.name)} <span class="muted">· ${escapeHtml(item.axis)}</span></label>`).join('');
+  return `<div class="cross-card"><h3><label><input class="cross-sheet" type="checkbox" data-sheet="${escapeHtml(name)}" ${isDefault&&parsed.items.length?'checked':''} ${!parsed.items.length?'disabled':''}>${escapeHtml(name)}</label></h3>${parsed.items.length?`<div class="muted">${parsed.items.length} 個樣本 · ${parsed.axes} 組波長欄</div><div class="cross-samples">${options}</div>`:`<div class="warning">${escapeHtml(parsed.error)}</div>`}</div>`;
+ }).join('');$('crossSheets').innerHTML=html;
+ $('selectRecommended').disabled=!hasPreferred;
+ $('crossStatus').textContent=hasPreferred?'已預選存在的品質平均工作表；請檢查各表樣本欄位，再點「更新疊加圖表」。':'沒有找到三種品質平均工作表，可手動勾選其他工作表。';
+}
+function analyzeCross(){
+ if(!workbook){$('status').textContent='請先匯入 Excel 檔案';return}
+ const from=num($('from').value),to=num($('to').value);
+ if(!Number.isFinite(from)||!Number.isFinite(to)||from>=to){$('status').textContent='請輸入有效的波長範圍';return}
+ const chosen=[...document.querySelectorAll('.cross-sheet:checked')].map(el=>el.dataset.sheet);
+ const wanted=new Set([...document.querySelectorAll('.cross-sample:checked')].filter(el=>chosen.includes(el.dataset.sheet)).map(el=>el.dataset.sheet+'::'+el.dataset.col));
+ const oldNames=new Set([...selected].map(i=>series[i]?.key));
+ series=chosen.flatMap(name=>readSheetSeries(name).items.filter(item=>wanted.has(item.key)).map(item=>({...item,name:`${name}／${item.name}`,data:item.data.filter(p=>p.w>=from&&p.w<=to)})).filter(item=>item.data.length));
+ selected=new Set(series.map((s,i)=>oldNames.size?(oldNames.has(s.key)?i:-1):i).filter(i=>i>=0));
+ if(!selected.size)selected=new Set(series.map((_,i)=>i));
+ const totalWave=new Set(series.flatMap(s=>s.data.map(p=>p.w))).size;
+ $('status').innerHTML=series.length?`<span class="ok">✓ 跨工作表：${chosen.length} 張工作表、${series.length} 條曲線、${totalWave} 個不同波長；${fmt(from)}–${fmt(to)} nm。</span>`:'<span class="warning">沒有符合波段的曲線，請勾選工作表及樣本，或檢查波長範圍。</span>';
+ $('crossStatus').textContent=series.length?'已疊加 '+series.map(s=>s.name).join('、'):'尚未選取可用樣本';
+ $('all').disabled=!series.length;$('export').disabled=!series.length;$('exportRaw').disabled=!series.length;render();
+}
+$('compareMode').onchange=()=>{const cross=$('compareMode').value==='cross';$('crossControls').style.display=cross?'block':'none';$('sheet').disabled=cross||!workbook;$('wave').disabled=cross||!workbook;if(cross){if(workbook)populateCross();analyzeCross()}else{if(workbook)parseSheet($('sheet').value);else{series=[];selected.clear();render()}}};
+$('selectRecommended').onclick=()=>{const wanted=new Set(['新鮮平均','蟲害平均','腐爛平均']);document.querySelectorAll('.cross-sheet').forEach(el=>{el.checked=wanted.has(el.dataset.sheet)&&!el.disabled});document.querySelectorAll('.cross-sample').forEach(el=>{let first=true;document.querySelectorAll('.cross-sample').forEach(candidate=>{if(candidate.dataset.sheet===el.dataset.sheet&&!el.checked&&first){first=false}});const isFirst=[...document.querySelectorAll('.cross-sample')].find(candidate=>candidate.dataset.sheet===el.dataset.sheet)===el;el.checked=wanted.has(el.dataset.sheet)&&isFirst});analyzeCross()};
+$('crossApply').onclick=analyzeCross;
+$('crossAll').onclick=()=>{document.querySelectorAll('.cross-sheet:not(:disabled)').forEach(el=>el.checked=true);document.querySelectorAll('.cross-sample').forEach(el=>el.checked=true);analyzeCross()};
+$('crossSheets').addEventListener('change',e=>{if(e.target.matches('.cross-sheet')){const name=e.target.dataset.sheet;document.querySelectorAll('.cross-sample').forEach(el=>{if(el.dataset.sheet===name){if(!e.target.checked)el.checked=false;else if(![...document.querySelectorAll('.cross-sample')].some(x=>x.dataset.sheet===name&&x.checked))el.checked=true}})}else if(e.target.matches('.cross-sample')&&e.target.checked){document.querySelectorAll('.cross-sheet').forEach(el=>{if(el.dataset.sheet===e.target.dataset.sheet)el.checked=true})}analyzeCross()});
+function feature(s){const a=s.data;if(!a.length)return null;let peak=a.reduce((p,c)=>c.y>p.y?c:p,a[0]);return {name:s.name,w:peak.w,max:peak.y,mean:a.reduce((v,p)=>v+p.y,0)/a.length,min:Math.min(...a.map(p=>p.y)),n:a.length}}
+function render(){const first=[...selected][0],f=first===undefined?null:feature(series[first]);$('peakW').textContent=f?fmt(f.w,3):'—';$('peakI').textContent=f?fmt(f.max):'—';$('mean').textContent=f?fmt(f.mean):'—';$('points').textContent=f?f.n:'—';$('samples').innerHTML=series.length?series.map((s,i)=>`<label class="sample"><input type="checkbox" data-i="${i}" ${selected.has(i)?'checked':''}><span>${escapeHtml(s.name)}</span><button class="mini" data-only="${i}" type="button">單獨</button></label>`).join(''):'<div class="empty">沒有可繪製的樣本</div>';$('legend').innerHTML=[...selected].map(i=>`<label><i style="background:${palette[i%palette.length]}"></i>${escapeHtml(series[i].name)}</label>`).join('');$('tbody').innerHTML=series.length?series.map(s=>{const f=feature(s);return f?`<tr><td>${escapeHtml(f.name)}</td><td>${fmt(f.w,3)}</td><td>${fmt(f.max)}</td><td>${fmt(f.mean)}</td><td>${fmt(f.min)}</td><td>${f.n}</td></tr>`:''}).join(''):'<tr><td colspan="6">沒有資料</td></tr>';draw()}
+$('samples').addEventListener('change',e=>{if(e.target.matches('input[data-i]')){let i=Number(e.target.dataset.i);e.target.checked?selected.add(i):selected.delete(i);render()}});$('samples').addEventListener('click',e=>{if(e.target.dataset.only!==undefined){selected=new Set([Number(e.target.dataset.only)]);render()}});$('all').onclick=()=>{selected=selected.size===series.length?new Set():new Set(series.map((_,i)=>i));render()};
+function draw(){const c=$('chart'),r=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1;c.width=Math.max(300,Math.round(r.width*dpr));c.height=Math.max(220,Math.round(r.height*dpr));const ctx=c.getContext('2d');ctx.scale(dpr,dpr);const W=c.width/dpr,H=c.height/dpr;ctx.clearRect(0,0,W,H);const L=62,R=18,T=20,B=44,pw=W-L-R,ph=H-T-B;ctx.font='12px sans-serif';ctx.textBaseline='middle';const vis=[...selected].map(i=>({s:series[i],i})).filter(o=>o.s&&o.s.data.length);if(!vis.length){ctx.fillStyle='#91a5bc';ctx.textAlign='center';ctx.fillText('請勾選至少一個樣本',W/2,H/2);return}const x0=Number($('from').value),x1=Number($('to').value);let vals=vis.flatMap(o=>o.s.data.map(p=>p.y));let y0=Math.min(0,...vals),y1=Math.max(...vals);if(y0===y1)y1=y0+1;let pad=(y1-y0)*.07;y0-=pad;y1+=pad;if($('ymode').value==='manual'){const low=num($('ymin').value),high=num($('ymax').value);if(Number.isFinite(low)&&Number.isFinite(high)&&low<high){y0=low;y1=high;$('yerror').style.display='none'}else{$('yerror').textContent='Y軸最小值必須小於最大值，且兩者皆需填寫數字；目前暫以自動刻度顯示。';$('yerror').style.display='block'}}else{$('yerror').style.display='none'}const X=v=>L+(v-x0)/(x1-x0)*pw,Y=v=>T+(y1-v)/(y1-y0)*ph;ctx.lineWidth=1;ctx.strokeStyle='#314255';ctx.fillStyle='#9eb1c8';ctx.textAlign='right';for(let i=0;i<=5;i++){let y=T+ph*i/5;ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(W-R,y);ctx.stroke();ctx.fillText(fmt(y1-(y1-y0)*i/5,0),L-10,y)}ctx.textAlign='center';const requestedStep=num($('xstep').value);const step=Number.isFinite(requestedStep)&&requestedStep>0?requestedStep:(x1-x0)/6;const tickCount=Math.floor((x1-x0)/step)+1;if(tickCount>150){$('status').textContent='X軸刻度過密，請調大刻度間距';}const safeStep=tickCount>150?(x1-x0)/6:step;let ticks=[];const start=Math.ceil((x0-1e-9)/safeStep)*safeStep;for(let v=start,n=0;v<=x1+1e-8&&n<151;v+=safeStep,n++)ticks.push(Number(v.toFixed(9)));if(!ticks.length)ticks=[x0,x1];const labelStride=Math.max(1,Math.ceil(ticks.length/Math.max(2,Math.floor(pw/62))));ticks.forEach((v,i)=>{let x=X(v);ctx.beginPath();ctx.moveTo(x,T);ctx.lineTo(x,T+ph);ctx.stroke();if(i%labelStride===0)ctx.fillText(fmt(v,2),x,H-23)});vis.forEach(({s,i})=>{ctx.beginPath();ctx.strokeStyle=palette[i%palette.length];ctx.lineWidth=2.4;const n=Number($('smooth').value);const pts=s.data.map((p,j)=>{if(n===1)return p;let half=Math.floor(n/2),part=s.data.slice(Math.max(0,j-half),Math.min(s.data.length,j+half+1));return {w:p.w,y:part.reduce((a,b)=>a+b.y,0)/part.length}});pts.forEach((p,j)=>j?ctx.lineTo(X(p.w),Y(p.y)):ctx.moveTo(X(p.w),Y(p.y)));ctx.stroke()});if(hover!==null&&hover>=L&&hover<=W-R){let wave=x0+(hover-L)/pw*(x1-x0);ctx.strokeStyle='#b9c9dc';ctx.setLineDash([4,5]);ctx.beginPath();ctx.moveTo(hover,T);ctx.lineTo(hover,T+ph);ctx.stroke();ctx.setLineDash([]);let text=vis.slice(0,4).map(({s})=>{let p=s.data.reduce((a,b)=>Math.abs(b.w-wave)<Math.abs(a.w-wave)?b:a);return `${s.name}: ${fmt(p.y)}`});let boxW=Math.min(W-20,Math.max(155,...text.map(s=>ctx.measureText(s).width+18)));let bx=Math.min(Math.max(hover+10,8),W-boxW-8),by=T+10;ctx.fillStyle='#24364a';ctx.fillRect(bx,by,boxW,22+text.length*18);ctx.fillStyle='#fff';ctx.textAlign='left';ctx.fillText(`${fmt(wave,2)} nm`,bx+9,by+13);text.forEach((s,i)=>ctx.fillText(s,bx+9,by+32+i*18))}}
+$('smooth').addEventListener('change',draw);$('ymode').addEventListener('change',()=>{const manual=$('ymode').value==='manual';$('ymin').disabled=!manual;$('ymax').disabled=!manual;if(manual){const vals=[...selected].flatMap(i=>(series[i]?.data||[]).map(p=>p.y));if(vals.length){const lo=Math.min(0,...vals),hi=Math.max(...vals),pad=Math.max(1,(hi-lo)*.07);if(!$('ymin').value)$('ymin').value=String(Math.floor(lo-pad));if(!$('ymax').value)$('ymax').value=String(Math.ceil(hi+pad))}}draw()});['ymin','ymax'].forEach(id=>$(id).addEventListener('input',draw));$('yreset').addEventListener('click',()=>{$('ymode').value='auto';$('ymin').value='';$('ymax').value='';$('ymin').disabled=true;$('ymax').disabled=true;draw()});$('chart').addEventListener('mousemove',e=>{hover=e.clientX-$('chart').getBoundingClientRect().left;draw()});$('chart').addEventListener('mouseleave',()=>{hover=null;draw()});window.addEventListener('resize',draw);
+$('drop').onclick=()=>$('file').click();$('drop').ondragover=e=>{e.preventDefault();$('drop').style.borderColor='#4ce2b6'};$('drop').ondragleave=()=>$('drop').style.borderColor='';$('drop').ondrop=e=>{e.preventDefault();$('drop').style.borderColor='';if(e.dataTransfer.files.length)load(e.dataTransfer.files[0])};$('file').onchange=e=>{if(e.target.files[0])load(e.target.files[0])};
+async function load(file){try{
+ const lower=file.name.toLowerCase();
+ if(lower.endsWith('.csv')){
+  const text=await file.text();
+  const csvRows=parseCsv(text);
+  if(!csvRows.length)throw Error('CSV 沒有資料');
+  workbook={SheetNames:['CSV資料'],Sheets:{'CSV資料':{_rows:csvRows}}};
+ }else{
+  if(typeof XLSX==='undefined')throw Error('Excel解析套件尚未載入，請連上網路後重新整理。');
+  const ab=await file.arrayBuffer();
+  workbook=XLSX.read(ab,{type:'array'});
+ }
+ crossCache.clear();$('sheet').innerHTML=workbook.SheetNames.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');$('sheet').disabled=false;$('apply').disabled=false;
+ const preferred=workbook.SheetNames.find(s=>s.trim()==='新鮮平均')||workbook.SheetNames.find(s=>s.trim()==='光強')||workbook.SheetNames[0];
+ $('sheet').value=preferred;populateCross();
+ if($('compareMode').value==='cross')analyzeCross();else parseSheet(preferred);
+ $('status').innerHTML+=`<span class="sub">　檔案：${escapeHtml(file.name)}</span>`;
+}catch(e){$('status').innerHTML=`<span class="warning">無法匯入：${escapeHtml(e.message)}</span>`}}$('sheet').onchange=()=>{try{parseSheet($('sheet').value)}catch(e){$('status').innerHTML='<span class="warning">工作表讀取失敗：'+escapeHtml(e.message)+'</span>'}};$('wave').onchange=analyze;$('apply').onclick=analyze;$('xstep').addEventListener('change',draw);
+$('demo').onclick=()=>{headers=['波長','新鮮辣椒1','新鮮辣椒2','蟲害辣椒1','腐爛辣椒1'];rows=Array.from({length:61},(_,i)=>{const w=600+i;return [w,420+3650*Math.exp(-.5*((w-630)/8.8)**2),380+3380*Math.exp(-.5*((w-632)/9.5)**2),460+2580*Math.exp(-.5*((w-626)/10)**2),540+1600*Math.exp(-.5*((w-635)/11)**2)]});$('sheet').innerHTML='<option>內建示範（非實測）</option>';$('sheet').disabled=true;$('wave').innerHTML=headers.map((s,i)=>`<option value="${i}">${s}</option>`).join('');$('wave').disabled=false;$('wave').value='0';$('apply').disabled=false;analyze();$('status').innerHTML+='<span class="warning">　目前為模擬曲線，並非你的實驗數據。</span>'};
+function csvEscape(v){let s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}function downloadCsv(name,data){const text='\ufeff'+data.map(row=>row.map(csvEscape).join(',')).join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}$('export').onclick=()=>downloadCsv('ChiliScan_光譜特徵.csv',[['樣本名稱','波峰波長(nm)','波峰強度','平均強度','最低強度','量測點數'],...series.map(s=>{const f=feature(s);return [f.name,f.w,f.max,f.mean,f.min,f.n]})]);$('exportRaw').onclick=()=>{const picked=[...selected].map(i=>series[i]).filter(Boolean);if(!picked.length){alert('請先勾選樣本');return}let wavelengths=[...new Set(picked.flatMap(s=>s.data.map(p=>p.w)))].sort((a,b)=>a-b);downloadCsv('ChiliScan_選定波段.csv',[['波長(nm)',...picked.map(s=>s.name)],...wavelengths.map(w=>[w,...picked.map(s=>s.data.find(p=>p.w===w)?.y??'')])])};draw();

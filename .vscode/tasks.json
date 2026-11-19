@@ -1,0 +1,33 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "預覽 ChiliScan",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}/server.ps1"
+			],
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "啟動 ChiliScan 預覽",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}/server.ps1"
+			],
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}
