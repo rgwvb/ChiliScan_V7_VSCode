@@ -129,6 +129,8 @@ $('selectRecommended').onclick=()=>{const wanted=new Set(['新鮮平均','蟲害
 $('crossApply').onclick=analyzeCross;
 $('crossAll').onclick=()=>{document.querySelectorAll('.cross-sheet:not(:disabled)').forEach(el=>el.checked=true);document.querySelectorAll('.cross-sample').forEach(el=>el.checked=true);analyzeCross()};
 $('crossSheets').addEventListener('change',e=>{if(e.target.matches('.cross-sheet')){const name=e.target.dataset.sheet;document.querySelectorAll('.cross-sample').forEach(el=>{if(el.dataset.sheet===name){if(!e.target.checked)el.checked=false;else if(![...document.querySelectorAll('.cross-sample')].some(x=>x.dataset.sheet===name&&x.checked))el.checked=true}})}else if(e.target.matches('.cross-sample')&&e.target.checked){document.querySelectorAll('.cross-sheet').forEach(el=>{if(el.dataset.sheet===e.target.dataset.sheet)el.checked=true})}analyzeCross()});
+// 快速套用指定波段；若已有資料，立即重新分析並更新匯出內容。
+$('presetBand').onclick=()=>{$('from').value='620';$('to').value='680';if(workbook)analyze()};
 // =====================================================
 // 區塊四：特徵計算、表格、樣本選擇與圖表繪製
 // =====================================================
