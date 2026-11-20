@@ -17,7 +17,7 @@
 // =====================================================
 // 區塊一：共用狀態與工具函式
 // =====================================================
-const $=id=>document.getElementById(id);let crossSpecs=[],crossCache=new Map();let workbook=null,rows=[],headers=[],widx=-1,series=[],selected=new Set(),hover=null,rawPage=0;const rawPageSize=100;const palette=['#60a5fa','#34d399','#fbbf24','#fb7185','#a78bfa','#22d3ee','#f472b6','#bef264','#f97316','#93c5fd'];
+const $=id=>document.getElementById(id);let crossSpecs=[],crossCache=new Map();let workbook=null,rows=[],headers=[],widx=-1,series=[],selected=new Set(),hover=null,rawPage=0,demoDataLoaded=false,csvImported=false;const rawPageSize=100;const palette=['#60a5fa','#34d399','#fbbf24','#fb7185','#a78bfa','#22d3ee','#f472b6','#bef264','#f97316','#93c5fd'];
 const staticTranslations={
 'pageTitle':'ChiliScan | Spectral Data Analysis Platform V7',
 'brandSuffix':'/ Spectral Analysis Platform',
@@ -96,27 +96,78 @@ const staticTranslations={
 };
 let currentLanguage=localStorage.getItem('chiliscan-language')||'zh';
 const uiTranslations={
-  pageTitle:['ChiliScan｜光譜數據分析平台','ChiliScan | Spectral Data Analysis Platform'],
-  brandSubtitle:['光譜分析平台','Spectral Analysis Platform'],
-  intro:['匯入 Excel / CSV 光譜資料，在瀏覽器中完成辨識、分析、比較與匯出。資料不會上傳至伺服器。','Import Excel / CSV spectral data to identify, analyze, compare, and export entirely in your browser. Data is never uploaded.'],
-  importTitle:['匯入光譜資料','Import Spectral Data'],
-  uploadTitle:['選擇或拖曳 Excel / CSV 檔案','Select or drag an Excel / CSV file'],
-  uploadHint:['支援 .xlsx、.xls、.csv；匯入後可切換工作表與波長欄','Supports .xlsx, .xls, and .csv; switch worksheets and wavelength columns after import'],
-  sheetLabel:['工作表','Worksheet'],notImported:['尚未匯入','Not imported'],wavelengthLabel:['波長欄','Wavelength Column'],autoDetect:['自動辨識','Auto-detect'],
-  startWavelength:['起始波長（nm）','Start wavelength (nm)'],endWavelength:['結束波長（nm）','End wavelength (nm)'],xStep:['X 軸刻度間距（nm）','X-axis tick spacing (nm)'],
-  setBand:['設定 620–680 nm','Set 620–680 nm'],reanalyze:['重新分析','Re-analyze'],demo:['載入示範資料','Load Demo Data'],waiting:['等待資料匯入。','Waiting for data import.'],
-  crossTitle:['跨工作表疊加比較','Cross-Worksheet Overlay Comparison'],analysisMode:['分析模式','Analysis Mode'],singleSheet:['單一工作表','Single Worksheet'],crossSheet:['跨工作表疊加比較','Cross-Worksheet Overlay'],
-  selectThree:['選取三種品質平均工作表','Select Three Quality Average Worksheets'],crossHint:['勾選要比較的工作表，再於每張工作表內選擇樣本欄位。','Select worksheets to compare, then select sample columns in each worksheet.'],
-  importFirst:['請先匯入 Excel 檔案','Import an Excel file first'],updateChart:['更新疊加圖表','Update Overlay Chart'],selectAll:['勾選所有可用樣本','Select All Available Samples'],
-  summaryTitle:['波段特徵摘要','Band Feature Summary'],peakWavelength:['波峰波長','Peak Wavelength'],peakIntensity:['波峰強度','Peak Intensity'],meanIntensity:['區間平均強度','Mean Intensity'],validPoints:['有效量測點數','Valid Measurement Points'],points:['點','pts'],
-  curveTitle:['光譜強度曲線','Spectral Intensity Curve'],yMode:['縱軸刻度模式','Y-axis Scale Mode'],yAuto:['自動調整（非負數據從 0 開始）','Auto (non-negative data starts at 0)'],yManual:['手動設定','Manual'],
-  yMin:['Y 軸最小值','Y-axis Minimum'],yMax:['Y 軸最大值','Y-axis Maximum'],resetY:['重設 Y 軸','Reset Y-axis'],curveDisplay:['曲線顯示方式','Curve Display'],
-  smooth3:['平滑顯示（3 點移動平均）','Smoothed (3-point moving average)'],smooth5:['平滑顯示（5 點移動平均）','Smoothed (5-point moving average)'],rawCurve:['原始數據（不平滑）','Raw Data (no smoothing)'],
-  chartHint:['橫軸為實際波長（nm），縱軸為原始訊號強度。平滑僅作用於曲線顯示，不影響原始資料與統計。','The X-axis shows wavelength (nm) and the Y-axis shows raw signal intensity. Smoothing affects display only, not raw data or statistics.'],
-  sampleTitle:['樣本選擇','Sample Selection'],showAfterImport:['匯入資料後顯示樣本欄位','Sample columns appear after import'],sampleHint:['勾選樣本即可疊加比較；按「單獨」可只查看該樣本。','Check samples to overlay them; use “Only” to view one sample.'],toggleAll:['全部顯示／取消','Show All / Clear'],
-  featureTableTitle:['各樣本光譜特徵比較','Spectral Feature Comparison'],exportFeatures:['匯出特徵 CSV','Export Features CSV'],exportRaw:['匯出選定波段原始數據 CSV','Export Raw Band CSV'],
-  tableSample:['樣本名稱（含工作表）','Sample Name (with Worksheet)'],tablePeakW:['波峰波長 (nm)','Peak Wavelength (nm)'],tablePeakI:['波峰強度','Peak Intensity'],tableMean:['平均強度','Mean Intensity'],tableMin:['最低強度','Minimum Intensity'],tablePoints:['量測點數','Measurement Points'],noAnalysis:['尚無分析資料','No analysis data'],
-  rawTitle:['分析範圍內的原始數據','Raw Data in the Analysis Range'],rawHint:['依目前起始與結束波長，顯示所有可用樣本的逐波長強度。','Shows wavelength-by-wavelength intensity for all available samples within the selected range.'],rawWavelength:['波長 (nm)','Wavelength (nm)'],rawWaiting:['匯入資料後顯示波段數據','Band data appears after import'],previous:['上一頁','Previous'],next:['下一頁','Next'],noData:['尚無數據','No data']
+  pageTitle:['ChiliScan｜光譜數據分析平台 V7','ChiliScan | Spectral Data Analysis Platform V7'],
+  brandSubtitle:['／ 光譜分析平台','/ Spectral Analysis Platform'],
+  intro:['匯入 Excel / CSV 光譜資料，自動辨識波長欄、繪製樣本曲線，計算指定波段的光譜特徵。所有分析在瀏覽器內進行，不會上傳資料至伺服器。','Import Excel / CSV spectral data to identify wavelength columns, plot sample curves, and calculate spectral features in a selected band. All analysis runs in your browser; no data is uploaded.'],
+  importTitle:['01　匯入光譜資料','01  Import Spectral Data'],
+  uploadTitle:['⬆ 點擊選擇 Excel / CSV，或將檔案拖曳到這裡','⬆ Click to select Excel / CSV, or drag a file here'],
+  uploadHint:['支援 .xlsx、.xls、.csv；匯入後可切換工作表；優先開啟「新鮮平均」，否則選擇「光強」；支援跨工作表光譜疊加與多組波長欄；預設分析 620–680 nm，曲線可切換平滑／原始顯示','Supports .xlsx, .xls, and .csv. Switch worksheets after import; prefers "Fresh Average", otherwise "Intensity". Supports cross-worksheet overlays and multiple wavelength columns. Default range: 620–680 nm; choose smoothed or raw curves.'],
+  notImported:['尚未匯入','Not imported'],
+  autoDetect:['自動辨識','Auto-detect'],
+  sheetLabel:['工作表（優先：新鮮平均／光強）','Worksheet (preferred: Fresh Average / Intensity)'],
+  wavelengthLabel:['波長欄','Wavelength Column'],
+  startWavelength:['起始波長（nm）','Start Wavelength (nm)'],
+  endWavelength:['結束波長（nm）','End Wavelength (nm)'],
+  xStep:['X軸刻度間距（nm）','X-axis Tick Interval (nm)'],
+  setBand:['設定 620–680 nm','Set 620–680 nm'],
+  reanalyze:['重新分析','Re-analyze'],
+  demo:['載入示範資料','Load Demo Data'],
+  waiting:['等待資料匯入。','Waiting for data import.'],
+  crossTitle:['02　跨工作表光譜疊加比較','02  Cross-Worksheet Spectral Overlay'],
+  crossSubtitle:['（可同時選擇新鮮平均、蟲害平均、腐爛平均）','(Compare Fresh, Pest-Damaged, and Rotten averages together)'],
+  analysisMode:['分析模式','Analysis Mode'],
+  singleSheet:['單一工作表','Single Worksheet'],
+  crossSheet:['跨工作表疊加比較','Cross-Worksheet Overlay'],
+  selectThree:['選取三種品質平均工作表','Select the Three Quality-Average Worksheets'],
+  crossHint:['勾選要比較的工作表，再於每張工作表內選擇樣本欄位。每個樣本會使用其左側最近的「波長」欄，不會按照資料列號強制配對。工作表名稱會加入圖例。','Select worksheets to compare and choose sample columns in each. Each sample uses the nearest wavelength column to its left; rows are not paired by row number. Worksheet names appear in the legend.'],
+  importFirst:['請先匯入 Excel 檔案','Import an Excel file first'],
+  updateChart:['更新疊加圖表','Update Overlay Chart'],
+  selectAll:['勾選所有可用樣本','Select All Available Samples'],
+  summaryTitle:['03　波段特徵摘要','03  Band Feature Summary'],
+  summarySubtitle:['（以目前勾選的第一個樣本為主）','(Based on the first selected sample)'],
+  peakWavelength:['波峰波長','Peak Wavelength'],
+  peakIntensity:['波峰強度','Peak Intensity'],
+  meanIntensity:['區間平均強度','Mean Intensity'],
+  validPoints:['有效量測點數','Valid Measurement Points'],
+  points:['點','points'],
+  curveTitle:['04　光譜強度曲線','04  Spectral Intensity Curve'],
+  yMode:['縱軸刻度模式','Y-axis Scale Mode'],
+  yAuto:['自動調整（非負數據從 0 開始）','Auto (start at 0 for non-negative data)'],
+  yManual:['手動設定','Manual'],
+  yMin:['Y軸最小值','Y-axis Minimum'],
+  yMax:['Y軸最大值','Y-axis Maximum'],
+  yMinPlaceholder:['例如 0','e.g. 0'],
+  yMaxPlaceholder:['例如 4500','e.g. 4500'],
+  resetY:['重設Y軸','Reset Y-axis'],
+  curveDisplay:['曲線顯示方式','Curve Display'],
+  smooth3:['平滑顯示（3點移動平均）','Smoothed (3-point moving average)'],
+  smooth5:['平滑顯示（5點移動平均）','Smoothed (5-point moving average)'],
+  rawCurve:['原始數據（不平滑）','Raw Data (No Smoothing)'],
+  chartHint:['橫軸：實際波長（nm）；縱軸：原始訊號強度（未進行反射率校正）。平滑僅作用於曲線顯示，不影響原始資料、波峰與平均強度計算。滑鼠移至曲線區域可查看游標位置，以及各樣本最近實測波長與原始強度。','X-axis: measured wavelength (nm); Y-axis: raw signal intensity (without reflectance correction). Smoothing affects display only, not the raw data or calculations. Hover over the chart to see the cursor position and each sample’s nearest measured wavelength and raw intensity.'],
+  sampleTitle:['樣本選擇','Sample Selection'],
+  showAfterImport:['匯入資料後顯示樣本欄位','Sample columns appear after import'],
+  sampleHint:['勾選樣本即可疊加比較；按「單獨」可只查看該樣本。','Check samples to overlay them; click "Only" to view a single sample.'],
+  toggleAll:['全部顯示／取消','Show All / Clear'],
+  featureTableTitle:['05　各樣本光譜特徵比較','05  Spectral Feature Comparison'],
+  exportFeatures:['匯出特徵 CSV','Export Features CSV'],
+  exportRaw:['匯出選定波段原始數據 CSV','Export Selected-Band Raw Data CSV'],
+  exportHint:['原始數據匯出會依上方起始／結束波長篩選，並只匯出目前勾選的樣本；設定 620–680 nm 後，結果僅包含此範圍內的量測點。','Raw-data export uses the start/end wavelengths above and includes only selected samples. Set 620–680 nm to export measurements in that range only.'],
+  tableSample:['樣本名稱（含工作表）','Sample Name (with Worksheet)'],
+  tablePeakW:['波峰波長 (nm)','Peak Wavelength (nm)'],
+  tablePeakI:['波峰強度','Peak Intensity'],
+  tableMean:['平均強度','Mean Intensity'],
+  tableMin:['最低強度','Minimum Intensity'],
+  tablePoints:['量測點數','Measurement Points'],
+  noAnalysis:['尚無分析資料','No analysis data'],
+  featureHint:['特徵僅依指定波長範圍計算。若樣本未落入範圍，該樣本不列入分析。不同樣本量測條件不一致時，強度不可直接視為品質差異。','Features are calculated only in the selected wavelength range; samples outside it are excluded. Intensity should not be interpreted as a quality difference when measurement conditions vary.'],
+  rawTitle:['06　分析範圍內的原始數據','06  Raw Data in Analysis Range'],
+  rawHint:['依目前起始與結束波長，顯示所有可用樣本的逐波長強度；沒有對應量測值時會留白。資料較多時可使用分頁瀏覽。','Shows each available sample’s intensity by wavelength within the selected range. Missing measurements are blank; use pagination for large datasets.'],
+  rawWavelength:['波長 (nm)','Wavelength (nm)'],
+  rawWaiting:['匯入資料後顯示波段數據','Band data appears after import'],
+  previous:['上一頁','Previous'],
+  next:['下一頁','Next'],
+  noData:['尚無數據','No data'],
+  finalHint:['使用提示：支援多組波長欄；每個樣本自動對應其左側最近的波長欄；重複樣本名稱會標示為第幾個同名欄位。若檔案只有圖片而非原始數值，請先提供 Excel / CSV 檔案。','Tip: Multiple wavelength columns are supported. Each sample uses the nearest wavelength column to its left; duplicate sample names are numbered. If your file contains only an image, provide the original Excel / CSV data.'],
 };
 const reverseStaticTranslations=Object.fromEntries(Object.entries(staticTranslations).map(([zh,en])=>[en,zh]));
 function tStatic(text){if(currentLanguage==='en')return staticTranslations[text]||text;return reverseStaticTranslations[text]||text}
@@ -128,13 +179,30 @@ function applyLanguage(lang){
    const pair=uiTranslations[el.dataset.i18n];
    if(pair)el.textContent=pair[lang==='en'?1:0];
  });
+ document.querySelectorAll('[data-i18n-placeholder]').forEach(el=>{
+   const pair=uiTranslations[el.dataset.i18nPlaceholder];
+   if(pair)el.placeholder=pair[lang==='en'?1:0];
+ });
  document.title=uiTranslations.pageTitle[lang==='en'?1:0];
- if(typeof render==='function')render();
+ if(workbook){
+   if(csvImported){
+     const oldName=workbook.SheetNames[0],newName=lang==='en'?'CSV Data':'CSV資料';
+     if(oldName!==newName){workbook.Sheets[newName]=workbook.Sheets[oldName];delete workbook.Sheets[oldName];workbook.SheetNames[0]=newName;$('sheet').innerHTML=`<option value="${escapeHtml(newName)}">${escapeHtml(newName)}</option>`;$('sheet').value=newName;crossCache.clear()}
+   }
+   if($('compareMode').value==='cross'){populateCross();analyzeCross()}
+   else parseSheet($('sheet').value);
+ }else if(demoDataLoaded){
+   headers=lang==='en'?['Wavelength','Fresh Pepper 1','Fresh Pepper 2','Pest-Damaged Pepper 1','Rotten Pepper 1']:['波長','新鮮辣椒1','新鮮辣椒2','蟲害辣椒1','腐爛辣椒1'];
+   $('sheet').innerHTML=`<option>${lang==='en'?'Demo Data (simulated)':'內建示範（非實測）'}</option>`;
+   $('wave').innerHTML=headers.map((header,i)=>`<option value="${i}">${header}</option>`).join('');
+   $('wave').value='0';analyze();
+   $('status').innerHTML+=`<span class="warning">${lang==='en'?'　Simulated data, not experimental measurements.':'　目前為模擬曲線，並非你的實驗數據。'}</span>`;
+ }else if(typeof render==='function')render();
 }
 document.querySelectorAll('[data-lang]').forEach(btn=>btn.addEventListener('click',()=>applyLanguage(btn.dataset.lang)));
 function fmt(x,d=2){return Number.isFinite(x)?x.toLocaleString(currentLanguage==='zh'?'zh-TW':'en-US',{maximumFractionDigits:d}):'—'}
 function num(v){if(typeof v==='number')return Number.isFinite(v)?v:NaN;if(typeof v!=='string')return NaN;let s=v.trim().replace(/,/g,'');return s!==''&&Number.isFinite(Number(s))?Number(s):NaN}
-function sampleLabel(name,occurrence){return occurrence>1?`${name}（第 ${occurrence} 個同名欄）`:name}
+function sampleLabel(name,occurrence){return occurrence>1?(currentLanguage==='en'?`${name} (duplicate ${occurrence})`:`${name}（第 ${occurrence} 個同名欄）`):name}
 
 // =====================================================
 // 區塊二：Excel / CSV 讀取與工作表解析
@@ -215,15 +283,19 @@ function readSheetSeries(name){
 }
 function populateCross(){
  if(!workbook)return;
+ const previousSheets=new Map([...document.querySelectorAll('.cross-sheet')].map(el=>[el.dataset.sheet,el.checked]));
+ const previousSamples=new Map([...document.querySelectorAll('.cross-sample')].map(el=>[el.dataset.sheet+'::'+el.dataset.col,el.checked]));
  const preferred=['新鮮平均','蟲害平均','腐爛平均'];
  const hasPreferred=preferred.some(x=>workbook.SheetNames.includes(x));
  const html=workbook.SheetNames.map(name=>{
   const parsed=readSheetSeries(name),isDefault=hasPreferred?preferred.includes(name):name===$('sheet').value;
-  const options=parsed.items.map((item,i)=>`<label><input type="checkbox" class="cross-sample" data-sheet="${escapeHtml(name)}" data-col="${item.column}" ${isDefault&&i===0?'checked':''}>${escapeHtml(item.name)} <span class="muted">· ${escapeHtml(item.axis)}</span></label>`).join('');
-  return `<div class="cross-card"><h3><label><input class="cross-sheet" type="checkbox" data-sheet="${escapeHtml(name)}" ${isDefault&&parsed.items.length?'checked':''} ${!parsed.items.length?'disabled':''}>${escapeHtml(name)}</label></h3>${parsed.items.length?`<div class="muted">${parsed.items.length} 個樣本 · ${parsed.axes} 組波長欄</div><div class="cross-samples">${options}</div>`:`<div class="warning">${escapeHtml(parsed.error)}</div>`}</div>`;
+  const options=parsed.items.map((item,i)=>{const key=name+'::'+item.column,checked=previousSamples.has(key)?previousSamples.get(key):isDefault&&i===0;return `<label><input type="checkbox" class="cross-sample" data-sheet="${escapeHtml(name)}" data-col="${item.column}" ${checked?'checked':''}>${escapeHtml(item.name)} <span class="muted">· ${escapeHtml(item.axis)}</span></label>`}).join('');
+  const sheetChecked=previousSheets.has(name)?previousSheets.get(name):isDefault&&parsed.items.length>0;
+  const countText=currentLanguage==='en'?`${parsed.items.length} sample(s) · ${parsed.axes} wavelength column(s)`:`${parsed.items.length} 個樣本 · ${parsed.axes} 組波長欄`;
+  return `<div class="cross-card"><h3><label><input class="cross-sheet" type="checkbox" data-sheet="${escapeHtml(name)}" ${sheetChecked?'checked':''} ${!parsed.items.length?'disabled':''}>${escapeHtml(name)}</label></h3>${parsed.items.length?`<div class="muted">${countText}</div><div class="cross-samples">${options}</div>`:`<div class="warning">${escapeHtml(currentLanguage==='en'?(parsed.error==='找不到波長欄'?'Wavelength column not found':parsed.error):parsed.error)}</div>`}</div>`;
  }).join('');$('crossSheets').innerHTML=html;
  $('selectRecommended').disabled=!hasPreferred;
- $('crossStatus').textContent=hasPreferred?'已預選存在的品質平均工作表；請檢查各表樣本欄位，再點「更新疊加圖表」。':'沒有找到三種品質平均工作表，可手動勾選其他工作表。';
+ $('crossStatus').textContent=currentLanguage==='en'?(hasPreferred?'Available quality-average worksheets are preselected. Review the samples, then update the chart.':'No recommended quality-average worksheets found. Select worksheets manually.'):(hasPreferred?'已預選存在的品質平均工作表；請檢查各表樣本欄位，再點「更新疊加圖表」。':'沒有找到三種品質平均工作表，可手動勾選其他工作表。');
 }
 function analyzeCross(){
  if(!workbook){$('status').textContent=tStatic('請先匯入 Excel 檔案');return}
@@ -260,7 +332,7 @@ function renderRawData(){
  const wavelengths=[...new Set(usable.flatMap(s=>s.data.map(p=>p.w)))].sort((a,b)=>a-b);
  const pageCount=Math.ceil(wavelengths.length/rawPageSize);
  rawPage=Math.max(0,Math.min(rawPage,pageCount-1));
- $('rawDataHead').innerHTML=`<tr><th>波長 (nm)</th>${usable.map(s=>`<th>${escapeHtml(s.name)}</th>`).join('')}</tr>`;
+ $('rawDataHead').innerHTML=`<tr><th>${currentLanguage==='en'?'Wavelength (nm)':'波長 (nm)'}</th>${usable.map(s=>`<th>${escapeHtml(s.name)}</th>`).join('')}</tr>`;
  if(!wavelengths.length){
   $('rawDataBody').innerHTML=`<tr><td colspan="${Math.max(1,usable.length+1)}" class="empty">${currentLanguage==='en'?'Band data appears after import and analysis':'匯入資料並完成分析後，這裡會顯示波段數據'}</td></tr>`;
   $('rawPageStatus').textContent=currentLanguage==='en'?'No data':'尚無數據';
@@ -270,7 +342,7 @@ function renderRawData(){
  const values=usable.map(s=>new Map(s.data.map(p=>[p.w,p.y])));
  const pageWaves=wavelengths.slice(rawPage*rawPageSize,(rawPage+1)*rawPageSize);
  $('rawDataBody').innerHTML=pageWaves.map(w=>`<tr><td>${fmt(w,3)}</td>${values.map(map=>`<td>${map.has(w)?fmt(map.get(w),6):'—'}</td>`).join('')}</tr>`).join('');
- $('rawPageStatus').textContent=currentLanguage==='en'?`Page ${rawPage+1} / ${pageCount}; ${wavelengths.length} distinct wavelengths, ${usable.length} samples`:`第 ${rawPage+1} / ${pageCount} 頁；共 ${wavelengths.length} 個不同波長、${usable.length} 個樣本`;
+ $('rawPageStatus').textContent=currentLanguage==='en'?`Page ${rawPage+1} / ${pageCount}; ${wavelengths.length} distinct wavelengths, ${usable.length} ${usable.length===1?'sample':'samples'}`:`第 ${rawPage+1} / ${pageCount} 頁；共 ${wavelengths.length} 個不同波長、${usable.length} 個樣本`;
  $('rawPrev').disabled=rawPage===0;$('rawNext').disabled=rawPage>=pageCount-1;
 }
 $('rawPrev').onclick=()=>{if(rawPage>0){rawPage--;renderRawData()}};
@@ -280,14 +352,16 @@ $('samples').addEventListener('change',e=>{if(e.target.matches('input[data-i]'))
 function draw(){const c=$('chart'),r=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1;c.width=Math.max(300,Math.round(r.width*dpr));c.height=Math.max(220,Math.round(r.height*dpr));const ctx=c.getContext('2d');ctx.scale(dpr,dpr);const W=c.width/dpr,H=c.height/dpr;ctx.clearRect(0,0,W,H);const L=62,R=18,T=20,B=44,pw=W-L-R,ph=H-T-B;ctx.font='12px sans-serif';ctx.textBaseline='middle';const vis=[...selected].map(i=>({s:series[i],i})).filter(o=>o.s&&o.s.data.length);if(!vis.length){ctx.fillStyle='#91a5bc';ctx.textAlign='center';ctx.fillText(currentLanguage==='en'?'Check at least one sample':'請勾選至少一個樣本',W/2,H/2);return}const x0=Number($('from').value),x1=Number($('to').value);let vals=vis.flatMap(o=>o.s.data.map(p=>p.y));const dataMin=Math.min(...vals),dataMax=Math.max(...vals);let y0=Math.min(0,dataMin),y1=Math.max(0,dataMax);if(y0===y1)y1=y0+1;let pad=(y1-y0)*.07;y0-=pad;y1+=pad;if(dataMin>=0)y0=0;else if(dataMax<=0)y1=0;if($('ymode').value==='manual'){const low=num($('ymin').value),high=num($('ymax').value);if(Number.isFinite(low)&&Number.isFinite(high)&&low<high){y0=low;y1=high;$('yerror').style.display='none'}else{$('yerror').textContent=currentLanguage==='en'?'Y-axis minimum must be less than maximum, and both values must be numbers. Auto scale is shown for now.':'Y軸最小值必須小於最大值，且兩者皆需填寫數字；目前暫以自動刻度顯示。';$('yerror').style.display='block'}}else{$('yerror').style.display='none'}const X=v=>L+(v-x0)/(x1-x0)*pw,Y=v=>T+(y1-v)/(y1-y0)*ph;ctx.lineWidth=1;ctx.strokeStyle='#314255';ctx.fillStyle='#9eb1c8';ctx.textAlign='right';for(let i=0;i<=5;i++){let y=T+ph*i/5;ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(W-R,y);ctx.stroke();ctx.fillText(fmt(y1-(y1-y0)*i/5,0),L-10,y)}ctx.textAlign='center';const requestedStep=num($('xstep').value);const step=Number.isFinite(requestedStep)&&requestedStep>0?requestedStep:(x1-x0)/6;const tickCount=Math.floor((x1-x0)/step)+1;if(tickCount>150){$('status').textContent=currentLanguage==='en'?'X-axis ticks are too dense; increase the tick spacing.':'X軸刻度過密，請調大刻度間距';}const safeStep=tickCount>150?(x1-x0)/6:step;let ticks=[];const start=Math.ceil((x0-1e-9)/safeStep)*safeStep;for(let v=start,n=0;v<=x1+1e-8&&n<151;v+=safeStep,n++)ticks.push(Number(v.toFixed(9)));if(!ticks.length)ticks=[x0,x1];const labelStride=Math.max(1,Math.ceil(ticks.length/Math.max(2,Math.floor(pw/62))));ticks.forEach((v,i)=>{let x=X(v);ctx.beginPath();ctx.moveTo(x,T);ctx.lineTo(x,T+ph);ctx.stroke();if(i%labelStride===0)ctx.fillText(fmt(v,2),x,H-23)});vis.forEach(({s,i})=>{ctx.beginPath();ctx.strokeStyle=palette[i%palette.length];ctx.lineWidth=2.4;const n=Number($('smooth').value);const pts=s.data.map((p,j)=>{if(n===1)return p;let half=Math.floor(n/2),part=s.data.slice(Math.max(0,j-half),Math.min(s.data.length,j+half+1));return {w:p.w,y:part.reduce((a,b)=>a+b.y,0)/part.length}});pts.forEach((p,j)=>j?ctx.lineTo(X(p.w),Y(p.y)):ctx.moveTo(X(p.w),Y(p.y)));ctx.stroke()});if(hover!==null&&hover>=L&&hover<=W-R){let wave=x0+(hover-L)/pw*(x1-x0);ctx.strokeStyle='#b9c9dc';ctx.setLineDash([4,5]);ctx.beginPath();ctx.moveTo(hover,T);ctx.lineTo(hover,T+ph);ctx.stroke();ctx.setLineDash([]);let text=vis.slice(0,4).map(({s})=>{let p=s.data.reduce((a,b)=>Math.abs(b.w-wave)<Math.abs(a.w-wave)?b:a);return `${s.name}: ${fmt(p.y)} @ ${fmt(p.w,2)} nm`});let boxW=Math.min(W-20,Math.max(155,...text.map(s=>ctx.measureText(s).width+18)));let bx=Math.min(Math.max(hover+10,8),W-boxW-8),by=T+10;ctx.fillStyle='#24364a';ctx.fillRect(bx,by,boxW,22+text.length*18);ctx.fillStyle='#fff';ctx.textAlign='left';ctx.fillText(`${currentLanguage==='en'?'Cursor':'游標位置'} ${fmt(wave,2)} nm`,bx+9,by+13);text.forEach((s,i)=>ctx.fillText(s,bx+9,by+32+i*18))}}
 $('smooth').addEventListener('change',draw);$('ymode').addEventListener('change',()=>{const manual=$('ymode').value==='manual';$('ymin').disabled=!manual;$('ymax').disabled=!manual;if(manual){const vals=[...selected].flatMap(i=>(series[i]?.data||[]).map(p=>p.y));if(vals.length){const lo=Math.min(0,...vals),hi=Math.max(...vals),pad=Math.max(1,(hi-lo)*.07);if(!$('ymin').value)$('ymin').value=String(Math.floor(lo-pad));if(!$('ymax').value)$('ymax').value=String(Math.ceil(hi+pad))}}draw()});['ymin','ymax'].forEach(id=>$(id).addEventListener('input',draw));$('yreset').addEventListener('click',()=>{$('ymode').value='auto';$('ymin').value='';$('ymax').value='';$('ymin').disabled=true;$('ymax').disabled=true;draw()});$('chart').addEventListener('mousemove',e=>{hover=e.clientX-$('chart').getBoundingClientRect().left;draw()});$('chart').addEventListener('mouseleave',()=>{hover=null;draw()});window.addEventListener('resize',draw);
 // 區塊五：檔案匯入、拖曳與示範資料
-$('drop').ondragover=e=>{e.preventDefault();$('drop').style.borderColor='#4ce2b6'};$('drop').ondragleave=()=>$('drop').style.borderColor='';$('drop').ondrop=e=>{e.preventDefault();$('drop').style.borderColor='';if(e.dataTransfer.files.length)load(e.dataTransfer.files[0])};$('file').onchange=e=>{if(e.target.files[0])load(e.target.files[0])};
+$('drop').onclick=e=>{if(e.target!==$('file'))$('file').click()};$('drop').ondragover=e=>{e.preventDefault();$('drop').style.borderColor='#4ce2b6'};$('drop').ondragleave=()=>$('drop').style.borderColor='';$('drop').ondrop=e=>{e.preventDefault();$('drop').style.borderColor='';if(e.dataTransfer.files.length)load(e.dataTransfer.files[0])};$('file').onchange=e=>{if(e.target.files[0])load(e.target.files[0])};
 // load()：讀取CSV或Excel；Excel解析使用SheetJS。
 async function load(file){try{
+ demoDataLoaded=false;csvImported=false;
  const lower=file.name.toLowerCase();
  if(lower.endsWith('.csv')){
   const text=await file.text();
   const csvRows=parseCsv(text);
   if(!csvRows.length)throw Error('CSV 沒有資料');
+  csvImported=true;
   workbook={SheetNames:['CSV資料'],Sheets:{'CSV資料':{_rows:csvRows}}};
  }else{
   if(typeof XLSX==='undefined')throw Error('Excel解析套件尚未載入，請連上網路後重新整理。');
@@ -300,6 +374,6 @@ async function load(file){try{
  if($('compareMode').value==='cross')analyzeCross();else parseSheet(preferred);
  $('status').innerHTML+=`<span class="sub">　檔案：${escapeHtml(file.name)}</span>`;
 }catch(e){$('status').innerHTML=`<span class="warning">無法匯入：${escapeHtml(e.message)}</span>`}}$('sheet').onchange=()=>{try{parseSheet($('sheet').value)}catch(e){$('status').innerHTML='<span class="warning">工作表讀取失敗：'+escapeHtml(e.message)+'</span>'}};$('wave').onchange=analyze;$('apply').onclick=analyze;$('xstep').addEventListener('change',draw);
-$('demo').onclick=()=>{headers=['波長','新鮮辣椒1','新鮮辣椒2','蟲害辣椒1','腐爛辣椒1'];rows=Array.from({length:61},(_,i)=>{const w=600+i;return [w,420+3650*Math.exp(-.5*((w-630)/8.8)**2),380+3380*Math.exp(-.5*((w-632)/9.5)**2),460+2580*Math.exp(-.5*((w-626)/10)**2),540+1600*Math.exp(-.5*((w-635)/11)**2)]});$('sheet').innerHTML='<option>內建示範（非實測）</option>';$('sheet').disabled=true;$('wave').innerHTML=headers.map((s,i)=>`<option value="${i}">${s}</option>`).join('');$('wave').disabled=false;$('wave').value='0';$('apply').disabled=false;analyze();$('status').innerHTML+='<span class="warning">　目前為模擬曲線，並非你的實驗數據。</span>'};
+$('demo').onclick=()=>{demoDataLoaded=true;headers=currentLanguage==='en'?['Wavelength','Fresh Pepper 1','Fresh Pepper 2','Pest-Damaged Pepper 1','Rotten Pepper 1']:['波長','新鮮辣椒1','新鮮辣椒2','蟲害辣椒1','腐爛辣椒1'];rows=Array.from({length:61},(_,i)=>{const w=600+i;return [w,420+3650*Math.exp(-.5*((w-630)/8.8)**2),380+3380*Math.exp(-.5*((w-632)/9.5)**2),460+2580*Math.exp(-.5*((w-626)/10)**2),540+1600*Math.exp(-.5*((w-635)/11)**2)]});$('sheet').innerHTML=`<option>${currentLanguage==='en'?'Demo Data (simulated)':'內建示範（非實測）'}</option>`;$('sheet').disabled=true;$('wave').innerHTML=headers.map((s,i)=>`<option value="${i}">${s}</option>`).join('');$('wave').disabled=false;$('wave').value='0';$('apply').disabled=false;analyze();$('status').innerHTML+=`<span class="warning">${currentLanguage==='en'?'　Simulated data, not experimental measurements.':'　目前為模擬曲線，並非你的實驗數據。'}</span>`};
 // 區塊六：CSV匯出；特徵與選定波段分開匯出。
 function csvEscape(v){let s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}function downloadCsv(name,data){const text='\ufeff'+data.map(row=>row.map(csvEscape).join(',')).join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}$('export').onclick=()=>{const headers=currentLanguage==='en'?['Sample Name','Peak Wavelength(nm)','Peak Intensity','Mean Intensity','Minimum Intensity','Measurement Points']:['樣本名稱','波峰波長(nm)','波峰強度','平均強度','最低強度','量測點數'];downloadCsv(currentLanguage==='en'?'ChiliScan_Spectral_Features.csv':'ChiliScan_光譜特徵.csv',[headers,...series.map(s=>{const f=feature(s);return [f.name,f.w,f.max,f.mean,f.min,f.n]})])};$('exportRaw').onclick=()=>{const picked=[...selected].map(i=>series[i]).filter(Boolean);if(!picked.length){alert(currentLanguage==='en'?'Please select at least one sample':'請先勾選樣本');return}let wavelengths=[...new Set(picked.flatMap(s=>s.data.map(p=>p.w)))].sort((a,b)=>a-b);downloadCsv(currentLanguage==='en'?'ChiliScan_Selected_Band.csv':'ChiliScan_選定波段.csv',[[(currentLanguage==='en'?'Wavelength(nm)':'波長(nm)'),...picked.map(s=>s.name)],...wavelengths.map(w=>[w,...picked.map(s=>s.data.find(p=>p.w===w)?.y??'')])])};applyLanguage(currentLanguage);draw();
