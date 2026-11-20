@@ -1,120 +1,92 @@
-<!doctype html>
-<!--
-  ChiliScan V7
-  Block 1: Header, import, and analysis parameters
-  Block 2: Cross-worksheet overlays
-  Block 3: Summary, chart, samples, and exports
--->
-<html lang="zh-Hant">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title data-i18n="pageTitle">ChiliScan｜光譜數據分析平台 V7</title>
-  <script src="js/xlsx.full.min.js?v=20261120-5"></script>
-  <link rel="stylesheet" href="css/style.css?v=20261120-5">
-</head>
-<body>
-  <div class="wrap">
-    <header>
-      <div class="brand"><span>◈</span> ChiliScan <span data-i18n="brandSubtitle">／ 光譜分析平台</span></div>
-      <div class="header-tools">
-        <div class="language-switch" aria-label="Language">
-          <button type="button" data-lang="zh" class="active" aria-pressed="true">中文</button>
-          <button type="button" data-lang="en" aria-pressed="false">English</button>
-        </div>
-        <div class="tag">UM2280 · ESP32</div>
-      </div>
-    </header>
-    <div class="intro" data-i18n="intro">匯入 Excel / CSV 光譜資料，自動辨識波長欄、繪製樣本曲線，計算指定波段的光譜特徵。所有分析在瀏覽器內進行，不會上傳資料至伺服器。</div>
-
-    <section class="panel">
-      <h2 data-i18n="importTitle">01　匯入光譜資料</h2>
-      <div class="upload" id="drop">
-        <strong data-i18n="uploadTitle">⬆ 點擊選擇 Excel / CSV，或將檔案拖曳到這裡</strong>
-        <div class="sub" data-i18n="uploadHint">支援 .xlsx、.xls、.csv；匯入後可切換工作表；優先開啟「新鮮平均」，否則選擇「光強」；支援跨工作表光譜疊加與多組波長欄；預設分析 620–680 nm，曲線可切換平滑／原始顯示</div>
-        <input type="file" id="file" accept=".xlsx,.xls,.csv" hidden>
-      </div>
-      <div class="tools">
-        <label class="field"><span data-i18n="sheetLabel">工作表（優先：新鮮平均／光強）</span><select id="sheet" disabled><option data-i18n="notImported">尚未匯入</option></select></label>
-        <label class="field"><span data-i18n="wavelengthLabel">波長欄</span><select id="wave" disabled><option data-i18n="autoDetect">自動辨識</option></select></label>
-        <label class="field"><span data-i18n="startWavelength">起始波長（nm）</span><input id="from" type="number" value="620" step="1"></label>
-        <label class="field"><span data-i18n="endWavelength">結束波長（nm）</span><input id="to" type="number" value="680" step="1"></label>
-        <label class="field"><span data-i18n="xStep">X軸刻度間距（nm）</span><input id="xstep" type="number" value="10" min="0.01" step="any"></label>
-        <button class="btn secondary" id="presetBand" type="button" data-i18n="setBand">設定 620–680 nm</button>
-        <button class="btn" id="apply" disabled data-i18n="reanalyze">重新分析</button>
-        <button class="btn secondary" id="demo" data-i18n="demo">載入示範資料</button>
-      </div>
-      <div class="status" id="status" data-i18n="waiting">等待資料匯入。</div>
-    </section>
-
-    <section class="panel" id="crossPanel">
-      <h2><span data-i18n="crossTitle">02　跨工作表光譜疊加比較</span> <span class="sub" data-i18n="crossSubtitle">（可同時選擇新鮮平均、蟲害平均、腐爛平均）</span></h2>
-      <div class="tools" style="margin-top:0">
-        <label class="field"><span data-i18n="analysisMode">分析模式</span><select id="compareMode"><option value="single" data-i18n="singleSheet">單一工作表</option><option value="cross" data-i18n="crossSheet">跨工作表疊加比較</option></select></label>
-        <button class="btn secondary" id="selectRecommended" disabled data-i18n="selectThree">選取三種品質平均工作表</button>
-      </div>
-      <div id="crossControls" hidden>
-        <p class="note" data-i18n="crossHint">勾選要比較的工作表，再於每張工作表內選擇樣本欄位。每個樣本會使用其左側最近的「波長」欄，不會按照資料列號強制配對。工作表名稱會加入圖例。</p>
-        <div id="crossSheets" class="cross-grid"><div class="empty" data-i18n="importFirst">請先匯入 Excel 檔案</div></div>
-        <div class="tools"><button class="btn" id="crossApply" data-i18n="updateChart">更新疊加圖表</button><button class="btn secondary" id="crossAll" data-i18n="selectAll">勾選所有可用樣本</button></div>
-        <p class="status" id="crossStatus"></p>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2><span data-i18n="summaryTitle">03　波段特徵摘要</span> <span class="sub" data-i18n="summarySubtitle">（以目前勾選的第一個樣本為主）</span></h2>
-      <div class="stats">
-        <div class="stat"><small data-i18n="peakWavelength">波峰波長</small><b id="peakW">—</b><em>nm</em></div>
-        <div class="stat"><small data-i18n="peakIntensity">波峰強度</small><b id="peakI">—</b></div>
-        <div class="stat"><small data-i18n="meanIntensity">區間平均強度</small><b id="mean">—</b></div>
-        <div class="stat"><small data-i18n="validPoints">有效量測點數</small><b id="points">—</b><em data-i18n="points">點</em></div>
-      </div>
-    </section>
-
-    <div class="twocol">
-      <section class="panel">
-        <h2 data-i18n="curveTitle">04　光譜強度曲線</h2>
-        <div class="tools" style="margin:0 0 15px">
-          <label class="field"><span data-i18n="yMode">縱軸刻度模式</span><select id="ymode"><option value="auto" data-i18n="yAuto">自動調整（非負數據從 0 開始）</option><option value="manual" data-i18n="yManual">手動設定</option></select></label>
-          <label class="field"><span data-i18n="yMin">Y軸最小值</span><input id="ymin" type="number" step="any" placeholder="例如 0" data-i18n-placeholder="yMinPlaceholder" disabled></label>
-          <label class="field"><span data-i18n="yMax">Y軸最大值</span><input id="ymax" type="number" step="any" placeholder="例如 4500" data-i18n-placeholder="yMaxPlaceholder" disabled></label>
-          <button class="btn secondary" id="yreset" type="button" data-i18n="resetY">重設Y軸</button>
-        </div>
-        <div class="status warning" id="yerror" style="margin:-4px 0 12px;display:none;color:#f7c27b"></div>
-        <div class="tools" style="margin:0 0 12px">
-          <label class="field"><span data-i18n="curveDisplay">曲線顯示方式</span><select id="smooth"><option value="3" data-i18n="smooth3">平滑顯示（3點移動平均）</option><option value="5" selected data-i18n="smooth5">平滑顯示（5點移動平均）</option><option value="1" data-i18n="rawCurve">原始數據（不平滑）</option></select></label>
-        </div>
-        <div class="chartbox"><canvas id="chart"></canvas></div>
-        <div class="legend" id="legend"></div>
-        <p class="note" data-i18n="chartHint">橫軸：實際波長（nm）；縱軸：原始訊號強度（未進行反射率校正）。平滑僅作用於曲線顯示，不影響原始資料、波峰與平均強度計算。滑鼠移至曲線區域可查看游標位置，以及各樣本最近實測波長與原始強度。</p>
-      </section>
-      <section class="panel">
-        <h2 data-i18n="sampleTitle">樣本選擇</h2>
-        <div class="samplelist" id="samples"><div class="empty" data-i18n="showAfterImport">匯入資料後顯示樣本欄位</div></div>
-        <p class="note" data-i18n="sampleHint">勾選樣本即可疊加比較；按「單獨」可只查看該樣本。</p>
-        <button class="btn secondary" id="all" disabled data-i18n="toggleAll">全部顯示／取消</button>
-      </section>
-    </div>
-
-    <section class="panel">
-      <h2 data-i18n="featureTableTitle">05　各樣本光譜特徵比較</h2>
-      <div class="tools" style="margin-top:0;margin-bottom:14px">
-        <button class="btn" id="export" disabled data-i18n="exportFeatures">匯出特徵 CSV</button>
-        <button class="btn secondary" id="exportRaw" disabled data-i18n="exportRaw">匯出選定波段原始數據 CSV</button>
-      </div>
-      <p class="note" data-i18n="exportHint">原始數據匯出會依上方起始／結束波長篩選，並只匯出目前勾選的樣本；設定 620–680 nm 後，結果僅包含此範圍內的量測點。</p>
-      <div class="tablewrap"><table><thead><tr><th data-i18n="tableSample">樣本名稱（含工作表）</th><th data-i18n="tablePeakW">波峰波長 (nm)</th><th data-i18n="tablePeakI">波峰強度</th><th data-i18n="tableMean">平均強度</th><th data-i18n="tableMin">最低強度</th><th data-i18n="tablePoints">量測點數</th></tr></thead><tbody id="tbody"><tr><td colspan="6" class="empty" data-i18n="noAnalysis">尚無分析資料</td></tr></tbody></table></div>
-      <p class="note" data-i18n="featureHint">特徵僅依指定波長範圍計算。若樣本未落入範圍，該樣本不列入分析。不同樣本量測條件不一致時，強度不可直接視為品質差異。</p>
-    </section>
-
-    <section class="panel">
-      <h2 data-i18n="rawTitle">06　分析範圍內的原始數據</h2>
-      <p class="note" data-i18n="rawHint">依目前起始與結束波長，顯示所有可用樣本的逐波長強度；沒有對應量測值時會留白。資料較多時可使用分頁瀏覽。</p>
-      <div class="tablewrap"><table><thead id="rawDataHead"><tr><th data-i18n="rawWavelength">波長 (nm)</th></tr></thead><tbody id="rawDataBody"><tr><td class="empty" data-i18n="rawWaiting">匯入資料後顯示波段數據</td></tr></tbody></table></div>
-      <div class="tools raw-data-controls"><button class="btn secondary" id="rawPrev" type="button" disabled data-i18n="previous">上一頁</button><span class="status" id="rawPageStatus" aria-live="polite" data-i18n="noData">尚無數據</span><button class="btn secondary" id="rawNext" type="button" disabled data-i18n="next">下一頁</button></div>
-    </section>
-    <div class="note" data-i18n="finalHint">使用提示：支援多組波長欄；每個樣本自動對應其左側最近的波長欄；重複樣本名稱會標示為第幾個同名欄位。若檔案只有圖片而非原始數值，請先提供 Excel / CSV 檔案。</div>
-  </div>
-  <script src="js/app.js?v=20261120-5"></script>
-</body>
-</html>
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ChiliScan｜光譜數據分析平台 V7</title><script src="js/xlsx.full.min.js"></script><style>
+:root{font-family:Inter,'Noto Sans TC','Microsoft JhengHei',system-ui,sans-serif;color:#e8eef8;background:#0c1320}*{box-sizing:border-box}body{margin:0}.wrap{max-width:1250px;margin:auto;padding:28px 22px 65px}header{display:flex;justify-content:space-between;align-items:center;margin-bottom:26px}.brand{font-size:23px;font-weight:800;letter-spacing:.3px}.brand span{color:#58c7a4}.tag{font-size:12px;background:#1d3340;color:#9fe7cf;padding:8px 12px;border-radius:30px}.intro{margin-bottom:24px;color:#a7b5c8;line-height:1.7}.panel{background:#151f2e;border:1px solid #2a3a50;border-radius:17px;padding:22px;margin-bottom:18px}.panel h2{font-size:16px;margin:0 0 17px}.upload{border:2px dashed #43617a;border-radius:12px;text-align:center;padding:28px 12px;background:#18283a;cursor:pointer}.upload:hover{border-color:#5cc9aa}.upload strong{display:block;margin-bottom:7px}.sub{font-size:13px;color:#9aadc2}.tools{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin-top:17px}.field{display:flex;flex-direction:column;gap:7px;font-size:12px;color:#9caec2}.field input,.field select{background:#101b29;border:1px solid #3a4d63;border-radius:9px;padding:10px;color:#e8eef8;min-width:105px}.btn{background:#3cb996;border:0;color:#071c18;padding:11px 16px;border-radius:9px;font-weight:700;cursor:pointer}.btn.secondary{background:#27394d;color:#e8eef8}.btn:disabled{opacity:.4;cursor:not-allowed}.status{color:#b8c8da;font-size:13px;margin-top:14px}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.stat{background:#101b2a;border:1px solid #304057;border-radius:12px;padding:16px}.stat small{display:block;color:#a5b6ca;margin-bottom:10px}.stat b{font-size:24px;color:#f3f8ff}.stat em{font-style:normal;font-size:12px;color:#91a9bc;margin-left:4px}.chartbox{position:relative;height:410px}.chartbox canvas{width:100%;height:100%;display:block}.legend{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}.legend label{font-size:12px;display:flex;align-items:center;gap:6px}.legend i{display:inline-block;width:12px;height:12px;border-radius:3px}.twocol{display:grid;grid-template-columns:2fr 1fr;gap:18px}.samplelist{max-height:280px;overflow:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.sample{display:flex;gap:8px;align-items:center;font-size:12px;padding:9px;background:#101b29;border-radius:8px;overflow-wrap:anywhere}.sample input{accent-color:#40c4a0}.sample span{flex:1}.sample .mini{border:0;background:#27394d;color:#d7e6f5;padding:5px 8px;border-radius:6px;cursor:pointer}.tablewrap{overflow:auto;max-height:360px}table{border-collapse:collapse;width:100%;font-size:12px}th,td{padding:11px 12px;border-bottom:1px solid #29394d;text-align:left;white-space:nowrap}th{position:sticky;top:0;background:#1c2a3c}td:first-child{font-weight:700}.note{color:#91a5bc;font-size:12px;line-height:1.8}.empty{color:#8296ad;text-align:center;padding:50px 0}.warning{color:#f7c27b}.ok{color:#72e1b7}@media(max-width:800px){.twocol{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.chartbox{height:300px}.samplelist{grid-template-columns:1fr}}@media(max-width:430px){.stats{grid-template-columns:1fr 1fr}.stat b{font-size:18px}}
+.cross-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:14px}.cross-card{background:#101b29;border:1px solid #33455c;border-radius:12px;padding:13px}.cross-card h3{margin:0 0 8px;font-size:14px}.cross-card .cross-samples{display:grid;gap:7px;margin-top:10px;max-height:225px;overflow:auto}.cross-card label{display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.4}.cross-card input{accent-color:#40c4a0}.cross-card .muted{font-size:12px;color:#9aaec4}.cross-card .warning{font-size:12px}</style></head><body><div class="wrap"><header><div class="brand"><span>◈</span> ChiliScan <span>／ 光譜分析平台</span></div><div class="tag">UM2280 · ESP32</div></header><div class="intro">匯入 Excel / CSV 光譜資料，自動辨識波長欄、繪製樣本曲線，計算指定波段的光譜特徵。所有分析在瀏覽器內進行，不會上傳資料至伺服器。</div><section class="panel"><h2>01　匯入光譜資料</h2><div class="upload" id="drop"><strong>⬆ 點擊選擇 Excel / CSV，或將檔案拖曳到這裡</strong><div class="sub">支援 .xlsx、.xls、.csv；匯入後可切換工作表；優先開啟「新鮮平均」，否則選擇「光強」；支援跨工作表光譜疊加與多組波長欄；預設600–680 nm，曲線可切換平滑／原始顯示</div><input type="file" id="file" accept=".xlsx,.xls,.csv" hidden></div><div class="tools"><label class="field">工作表（優先：新鮮平均／光強）<select id="sheet" disabled><option>尚未匯入</option></select></label><label class="field">波長欄<select id="wave" disabled><option>自動辨識</option></select></label><label class="field">起始波長（nm）<input id="from" type="number" value="600" step="1"></label><label class="field">結束波長（nm）<input id="to" type="number" value="680" step="1"></label><label class="field">X軸刻度間距（nm）<input id="xstep" type="number" value="10" min="0.01" step="any"></label><button class="btn" id="apply" disabled>重新分析</button><button class="btn secondary" id="demo">載入示範資料</button></div><div class="status" id="status">等待資料匯入。</div></section><section class="panel" id="crossPanel"><h2>02　跨工作表光譜疊加比較 <span class="sub">（可同時選擇新鮮平均、蟲害平均、腐爛平均）</span></h2><div class="tools" style="margin-top:0"><label class="field">分析模式<select id="compareMode"><option value="single">單一工作表</option><option value="cross">跨工作表疊加比較</option></select></label><button class="btn secondary" id="selectRecommended" disabled>選取三種品質平均工作表</button></div><div id="crossControls" style="display:none"><p class="note">勾選要比較的工作表，再於每張工作表內選擇樣本欄位。每個樣本會使用其左側最近的「波長」欄，不會按照資料列號強制配對。工作表名稱會加入圖例。</p><div id="crossSheets" class="cross-grid"><div class="empty">請先匯入 Excel 檔案</div></div><div class="tools"><button class="btn" id="crossApply">更新疊加圖表</button><button class="btn secondary" id="crossAll">勾選所有可用樣本</button></div><p class="status" id="crossStatus"></p></div></section><section class="panel"><h2>03　波段特徵摘要 <span class="sub">（以目前勾選的第一個樣本為主）</span></h2><div class="stats"><div class="stat"><small>波峰波長</small><b id="peakW">—</b><em>nm</em></div><div class="stat"><small>波峰強度</small><b id="peakI">—</b></div><div class="stat"><small>區間平均強度</small><b id="mean">—</b></div><div class="stat"><small>有效量測點數</small><b id="points">—</b><em>點</em></div></div></section><div class="twocol"><section class="panel"><h2>04　光譜強度曲線</h2><div class="tools" style="margin:0 0 15px"><label class="field">縱軸刻度模式<select id="ymode"><option value="auto">自動調整</option><option value="manual">手動設定</option></select></label><label class="field">Y軸最小值<input id="ymin" type="number" step="any" placeholder="例如 0" disabled></label><label class="field">Y軸最大值<input id="ymax" type="number" step="any" placeholder="例如 4500" disabled></label><button class="btn secondary" id="yreset" type="button">重設Y軸</button></div><div class="status" id="yerror" style="margin:-4px 0 12px;display:none;color:#f7c27b"></div><div class="tools" style="margin:0 0 12px"><label class="field">曲線顯示方式<select id="smooth"><option value="3">平滑顯示（3點移動平均）</option><option value="5">平滑顯示（5點移動平均）</option><option value="1">原始數據（不平滑）</option></select></label></div><div class="chartbox"><canvas id="chart"></canvas></div><div class="legend" id="legend"></div><p class="note">橫軸：實際波長（nm）；縱軸：原始訊號強度（未進行反射率校正）。平滑僅作用於曲線顯示，不影響原始資料、波峰與平均強度計算。滑鼠移至曲線區域可查看最近波長的數值。</p></section><section class="panel"><h2>樣本選擇</h2><div class="samplelist" id="samples"><div class="empty">匯入資料後顯示樣本欄位</div></div><p class="note">勾選樣本即可疊加比較；按「單獨」可只查看該樣本。</p><button class="btn secondary" id="all" disabled>全部顯示／取消</button></section></div><section class="panel"><h2>05　各樣本光譜特徵比較</h2><div class="tools" style="margin-top:0;margin-bottom:14px"><button class="btn" id="export" disabled>匯出特徵 CSV</button><button class="btn secondary" id="exportRaw" disabled>匯出選定波段 CSV</button></div><div class="tablewrap"><table><thead><tr><th>樣本名稱（含工作表）</th><th>波峰波長 (nm)</th><th>波峰強度</th><th>平均強度</th><th>最低強度</th><th>量測點數</th></tr></thead><tbody id="tbody"><tr><td colspan="6" class="empty">尚無分析資料</td></tr></tbody></table></div><p class="note">特徵僅依指定波長範圍計算。若樣本未落入範圍，該樣本不列入分析。不同樣本量測條件不一致時，強度不可直接視為品質差異。</p></section><div class="note">使用提示：支援範例.xlsx 的多組波長欄：每個樣本自動對應其左側最近的波長欄；重複樣本名稱自動編號。若檔案只有圖片而非原始數值，請先提供 Excel / CSV 檔案。</div></div><script>
+const $=id=>document.getElementById(id);let crossSpecs=[],crossCache=new Map();let workbook=null,rows=[],headers=[],widx=-1,series=[],selected=new Set(),hover=null;const palette=['#60a5fa','#34d399','#fbbf24','#fb7185','#a78bfa','#22d3ee','#f472b6','#bef264','#f97316','#93c5fd'];
+function fmt(x,d=2){return Number.isFinite(x)?x.toLocaleString('zh-TW',{maximumFractionDigits:d}):'—'}
+function num(v){if(typeof v==='number')return Number.isFinite(v)?v:NaN;if(typeof v!=='string')return NaN;let s=v.trim().replace(/,/g,'');return s!==''&&Number.isFinite(Number(s))?Number(s):NaN}
+function parseSheet(name){const data=XLSX.utils.sheet_to_json(workbook.Sheets[name],{header:1,defval:null,raw:true});if(!data.length)throw Error('工作表沒有資料');const head=data.findIndex(r=>r&&r.filter(v=>v!==null&&v!=='').length>=2);if(head<0)throw Error('找不到欄位標題');const rawHeaders=data[head],max=Math.max(...data.slice(head,head+5).map(r=>r.length));headers=Array.from({length:max},(_,i)=>String(rawHeaders[i]??`欄位${i+1}`).trim()||`欄位${i+1}`);rows=data.slice(head+1).filter(r=>r&&r.some(v=>v!==null&&v!==''));let opts=headers.map((h,i)=>`<option value="${i}">${escapeHtml(h)}（第${i+1}欄）</option>`).join('');$('wave').innerHTML=opts;$('wave').disabled=false;let likely=headers.findIndex(h=>/波長|wavelength|^nm$/i.test(h));if(likely<0){likely=headers.findIndex((h,i)=>{const a=rows.slice(0,100).map(r=>num(r[i])).filter(Number.isFinite);return a.length>10&&a.filter(v=>v>=200&&v<=1100).length/a.length>.85&&a.slice(1).filter((v,j)=>v>a[j]).length/a.length>.8})}widx=likely>=0?likely:0;$('wave').value=String(widx);if($('compareMode').value==='single')analyze()}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function analyze(){
+ if($('compareMode').value==='cross'){analyzeCross();return}
+ let from=num($('from').value),to=num($('to').value);
+ if(!Number.isFinite(from)||!Number.isFinite(to)||from>=to){$('status').textContent='請輸入有效的波長範圍';return}
+ widx=Number($('wave').value);
+ const waveCols=headers.map((h,i)=>/^(波長\s*\d*|wavelength\s*\d*|nm)$/i.test(h)?i:-1).filter(i=>i>=0);
+ if(!waveCols.length)waveCols.push(widx);
+ const oldNames=new Set([...selected].map(i=>series[i]?.name));
+ const counts={};series=[];
+ for(let i=0;i<headers.length;i++){
+  if(waveCols.includes(i))continue;
+  const axis=waveCols.filter(j=>j<i).at(-1)??widx;
+  const data=rows.map(r=>({w:num(r[axis]),y:num(r[i])})).filter(p=>Number.isFinite(p.w)&&Number.isFinite(p.y)&&p.w>=from&&p.w<=to).sort((a,b)=>a.w-b.w);
+  if(!data.length)continue;
+  const base=headers[i];counts[base]=(counts[base]||0)+1;
+  series.push({name:base+(counts[base]>1?' ('+counts[base]+')':''),i,data});
+ }
+ selected=new Set(series.map((v,i)=>oldNames.size?(oldNames.has(v.name)?i:-1):(i<Math.min(3,series.length)?i:-1)).filter(i=>i>=0));
+ if(!selected.size&&series.length)selected.add(0);
+ const waveCount=new Set(series.flatMap(s=>s.data.map(p=>p.w))).size;
+ $('status').innerHTML=series.length?`<span class="ok">✓ 已辨識 ${waveCols.length} 組波長欄、${series.length} 個光譜樣本；${waveCount} 個不同波長位置，分析範圍 ${fmt(from)}–${fmt(to)} nm。</span>`:'<span class="warning">指定波段內沒有可用樣本，請檢查工作表或波長欄。</span>';
+ $('all').disabled=!series.length;$('export').disabled=!series.length;$('exportRaw').disabled=!series.length;render()
+}
+function readSheetSeries(name){
+ if(crossCache.has(name))return crossCache.get(name);
+ const sh=workbook?.Sheets[name];if(!sh)return {error:'工作表不存在',items:[]};
+ const arr=XLSX.utils.sheet_to_json(sh,{header:1,defval:null,raw:true});
+ const head=arr.findIndex(r=>r&&r.filter(v=>v!==null&&v!==''&&v!==undefined).length>=2);
+ if(head<0)return {error:'工作表沒有可用的欄位資料',items:[]};
+ const max=Math.max(...arr.slice(head,head+5).map(r=>r?.length||0));
+ const hs=Array.from({length:max},(_,i)=>String(arr[head][i]??`欄位${i+1}`).trim()||`欄位${i+1}`);
+ const rs=arr.slice(head+1).filter(r=>r&&r.some(v=>v!==null&&v!==''));
+ let axes=hs.map((h,i)=>/^(波長\s*\d*|wavelength\s*\d*|nm)$/i.test(h)?i:-1).filter(i=>i>=0);
+ if(!axes.length){const found=hs.findIndex((h,i)=>{let a=rs.slice(0,150).map(r=>num(r[i])).filter(Number.isFinite);return a.length>=8&&a.filter(v=>v>=200&&v<=1100).length/a.length>.8&&a.slice(1).filter((v,j)=>v>a[j]).length/a.length>.75});if(found>=0)axes=[found]}
+ if(!axes.length)return {error:'找不到波長欄',items:[]};
+ let counts={},items=[];
+ hs.forEach((h,i)=>{if(axes.includes(i))return;const axis=axes.filter(j=>j<i).at(-1);if(axis===undefined)return;
+ const data=rs.map(r=>({w:num(r[axis]),y:num(r[i])})).filter(p=>Number.isFinite(p.w)&&Number.isFinite(p.y)).sort((a,b)=>a.w-b.w);
+ if(!data.length)return;counts[h]=(counts[h]||0)+1;
+ items.push({key:name+'::'+i,name:h+(counts[h]>1?' ('+counts[h]+')':''),sheet:name,column:i,axis:hs[axis],data});
+ });const out={items,axes:axes.length,error:items.length?'':'找不到有效光譜數據'};crossCache.set(name,out);return out;
+}
+function populateCross(){
+ if(!workbook)return;
+ const preferred=['新鮮平均','蟲害平均','腐爛平均'];
+ const hasPreferred=preferred.some(x=>workbook.SheetNames.includes(x));
+ const html=workbook.SheetNames.map(name=>{
+  const parsed=readSheetSeries(name),isDefault=hasPreferred?preferred.includes(name):name===$('sheet').value;
+  const options=parsed.items.map((item,i)=>`<label><input type="checkbox" class="cross-sample" data-sheet="${escapeHtml(name)}" data-col="${item.column}" ${isDefault&&i===0?'checked':''}>${escapeHtml(item.name)} <span class="muted">· ${escapeHtml(item.axis)}</span></label>`).join('');
+  return `<div class="cross-card"><h3><label><input class="cross-sheet" type="checkbox" data-sheet="${escapeHtml(name)}" ${isDefault&&parsed.items.length?'checked':''} ${!parsed.items.length?'disabled':''}>${escapeHtml(name)}</label></h3>${parsed.items.length?`<div class="muted">${parsed.items.length} 個樣本 · ${parsed.axes} 組波長欄</div><div class="cross-samples">${options}</div>`:`<div class="warning">${escapeHtml(parsed.error)}</div>`}</div>`;
+ }).join('');$('crossSheets').innerHTML=html;
+ $('selectRecommended').disabled=!hasPreferred;
+ $('crossStatus').textContent=hasPreferred?'已預選存在的品質平均工作表；請檢查各表樣本欄位，再點「更新疊加圖表」。':'沒有找到三種品質平均工作表，可手動勾選其他工作表。';
+}
+function analyzeCross(){
+ if(!workbook){$('status').textContent='請先匯入 Excel 檔案';return}
+ const from=num($('from').value),to=num($('to').value);
+ if(!Number.isFinite(from)||!Number.isFinite(to)||from>=to){$('status').textContent='請輸入有效的波長範圍';return}
+ const chosen=[...document.querySelectorAll('.cross-sheet:checked')].map(el=>el.dataset.sheet);
+ const wanted=new Set([...document.querySelectorAll('.cross-sample:checked')].filter(el=>chosen.includes(el.dataset.sheet)).map(el=>el.dataset.sheet+'::'+el.dataset.col));
+ const oldNames=new Set([...selected].map(i=>series[i]?.key));
+ series=chosen.flatMap(name=>readSheetSeries(name).items.filter(item=>wanted.has(item.key)).map(item=>({...item,name:`${name}／${item.name}`,data:item.data.filter(p=>p.w>=from&&p.w<=to)})).filter(item=>item.data.length));
+ selected=new Set(series.map((s,i)=>oldNames.size?(oldNames.has(s.key)?i:-1):i).filter(i=>i>=0));
+ if(!selected.size)selected=new Set(series.map((_,i)=>i));
+ const totalWave=new Set(series.flatMap(s=>s.data.map(p=>p.w))).size;
+ $('status').innerHTML=series.length?`<span class="ok">✓ 跨工作表：${chosen.length} 張工作表、${series.length} 條曲線、${totalWave} 個不同波長；${fmt(from)}–${fmt(to)} nm。</span>`:'<span class="warning">沒有符合波段的曲線，請勾選工作表及樣本，或檢查波長範圍。</span>';
+ $('crossStatus').textContent=series.length?'已疊加 '+series.map(s=>s.name).join('、'):'尚未選取可用樣本';
+ $('all').disabled=!series.length;$('export').disabled=!series.length;$('exportRaw').disabled=!series.length;render();
+}
+$('compareMode').onchange=()=>{const cross=$('compareMode').value==='cross';$('crossControls').style.display=cross?'block':'none';$('sheet').disabled=cross||!workbook;$('wave').disabled=cross||!workbook;if(cross){if(workbook)populateCross();analyzeCross()}else{if(workbook)parseSheet($('sheet').value);else{series=[];selected.clear();render()}}};
+$('selectRecommended').onclick=()=>{const wanted=new Set(['新鮮平均','蟲害平均','腐爛平均']);document.querySelectorAll('.cross-sheet').forEach(el=>{el.checked=wanted.has(el.dataset.sheet)&&!el.disabled});document.querySelectorAll('.cross-sample').forEach(el=>{const items=[...document.querySelectorAll(`.cross-sample[data-sheet="${CSS.escape(el.dataset.sheet)}"]`)];el.checked=wanted.has(el.dataset.sheet)&&el===items[0]});analyzeCross()};
+$('crossApply').onclick=analyzeCross;
+$('crossAll').onclick=()=>{document.querySelectorAll('.cross-sheet:not(:disabled)').forEach(el=>el.checked=true);document.querySelectorAll('.cross-sample').forEach(el=>el.checked=true);analyzeCross()};
+$('crossSheets').addEventListener('change',e=>{if(e.target.matches('.cross-sheet')){const name=e.target.dataset.sheet;document.querySelectorAll('.cross-sample').forEach(el=>{if(el.dataset.sheet===name){if(!e.target.checked)el.checked=false;else if(![...document.querySelectorAll('.cross-sample')].some(x=>x.dataset.sheet===name&&x.checked))el.checked=true}})}else if(e.target.matches('.cross-sample')&&e.target.checked){document.querySelectorAll('.cross-sheet').forEach(el=>{if(el.dataset.sheet===e.target.dataset.sheet)el.checked=true})}analyzeCross()});
+function feature(s){const a=s.data;if(!a.length)return null;let peak=a.reduce((p,c)=>c.y>p.y?c:p,a[0]);return {name:s.name,w:peak.w,max:peak.y,mean:a.reduce((v,p)=>v+p.y,0)/a.length,min:Math.min(...a.map(p=>p.y)),n:a.length}}
+function render(){const first=[...selected][0],f=first===undefined?null:feature(series[first]);$('peakW').textContent=f?fmt(f.w,3):'—';$('peakI').textContent=f?fmt(f.max):'—';$('mean').textContent=f?fmt(f.mean):'—';$('points').textContent=f?f.n:'—';$('samples').innerHTML=series.length?series.map((s,i)=>`<label class="sample"><input type="checkbox" data-i="${i}" ${selected.has(i)?'checked':''}><span>${escapeHtml(s.name)}</span><button class="mini" data-only="${i}" type="button">單獨</button></label>`).join(''):'<div class="empty">沒有可繪製的樣本</div>';$('legend').innerHTML=[...selected].map(i=>`<label><i style="background:${palette[i%palette.length]}"></i>${escapeHtml(series[i].name)}</label>`).join('');$('tbody').innerHTML=series.length?series.map(s=>{const f=feature(s);return f?`<tr><td>${escapeHtml(f.name)}</td><td>${fmt(f.w,3)}</td><td>${fmt(f.max)}</td><td>${fmt(f.mean)}</td><td>${fmt(f.min)}</td><td>${f.n}</td></tr>`:''}).join(''):'<tr><td colspan="6">沒有資料</td></tr>';draw()}
+$('samples').addEventListener('change',e=>{if(e.target.matches('input[data-i]')){let i=Number(e.target.dataset.i);e.target.checked?selected.add(i):selected.delete(i);render()}});$('samples').addEventListener('click',e=>{if(e.target.dataset.only!==undefined){selected=new Set([Number(e.target.dataset.only)]);render()}});$('all').onclick=()=>{selected=selected.size===series.length?new Set():new Set(series.map((_,i)=>i));render()};
+function draw(){const c=$('chart'),r=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1;c.width=Math.max(300,Math.round(r.width*dpr));c.height=Math.max(220,Math.round(r.height*dpr));const ctx=c.getContext('2d');ctx.scale(dpr,dpr);const W=c.width/dpr,H=c.height/dpr;ctx.clearRect(0,0,W,H);const L=62,R=18,T=20,B=44,pw=W-L-R,ph=H-T-B;ctx.font='12px sans-serif';ctx.textBaseline='middle';const vis=[...selected].map(i=>({s:series[i],i})).filter(o=>o.s&&o.s.data.length);if(!vis.length){ctx.fillStyle='#91a5bc';ctx.textAlign='center';ctx.fillText('請勾選至少一個樣本',W/2,H/2);return}const x0=Number($('from').value),x1=Number($('to').value);let vals=vis.flatMap(o=>o.s.data.map(p=>p.y));let y0=Math.min(0,...vals),y1=Math.max(...vals);if(y0===y1)y1=y0+1;let pad=(y1-y0)*.07;y0-=pad;y1+=pad;if($('ymode').value==='manual'){const low=num($('ymin').value),high=num($('ymax').value);if(Number.isFinite(low)&&Number.isFinite(high)&&low<high){y0=low;y1=high;$('yerror').style.display='none'}else{$('yerror').textContent='Y軸最小值必須小於最大值，且兩者皆需填寫數字；目前暫以自動刻度顯示。';$('yerror').style.display='block'}}else{$('yerror').style.display='none'}const X=v=>L+(v-x0)/(x1-x0)*pw,Y=v=>T+(y1-v)/(y1-y0)*ph;ctx.lineWidth=1;ctx.strokeStyle='#314255';ctx.fillStyle='#9eb1c8';ctx.textAlign='right';for(let i=0;i<=5;i++){let y=T+ph*i/5;ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(W-R,y);ctx.stroke();ctx.fillText(fmt(y1-(y1-y0)*i/5,0),L-10,y)}ctx.textAlign='center';const requestedStep=num($('xstep').value);const step=Number.isFinite(requestedStep)&&requestedStep>0?requestedStep:(x1-x0)/6;const tickCount=Math.floor((x1-x0)/step)+1;if(tickCount>150){$('status').textContent='X軸刻度過密，請調大刻度間距';}const safeStep=tickCount>150?(x1-x0)/6:step;let ticks=[];const start=Math.ceil((x0-1e-9)/safeStep)*safeStep;for(let v=start,n=0;v<=x1+1e-8&&n<151;v+=safeStep,n++)ticks.push(Number(v.toFixed(9)));if(!ticks.length)ticks=[x0,x1];const labelStride=Math.max(1,Math.ceil(ticks.length/Math.max(2,Math.floor(pw/62))));ticks.forEach((v,i)=>{let x=X(v);ctx.beginPath();ctx.moveTo(x,T);ctx.lineTo(x,T+ph);ctx.stroke();if(i%labelStride===0)ctx.fillText(fmt(v,2),x,H-23)});vis.forEach(({s,i})=>{ctx.beginPath();ctx.strokeStyle=palette[i%palette.length];ctx.lineWidth=2.4;const n=Number($('smooth').value);const pts=s.data.map((p,j)=>{if(n===1)return p;let half=Math.floor(n/2),part=s.data.slice(Math.max(0,j-half),Math.min(s.data.length,j+half+1));return {w:p.w,y:part.reduce((a,b)=>a+b.y,0)/part.length}});pts.forEach((p,j)=>j?ctx.lineTo(X(p.w),Y(p.y)):ctx.moveTo(X(p.w),Y(p.y)));ctx.stroke()});if(hover!==null&&hover>=L&&hover<=W-R){let wave=x0+(hover-L)/pw*(x1-x0);ctx.strokeStyle='#b9c9dc';ctx.setLineDash([4,5]);ctx.beginPath();ctx.moveTo(hover,T);ctx.lineTo(hover,T+ph);ctx.stroke();ctx.setLineDash([]);let text=vis.slice(0,4).map(({s})=>{let p=s.data.reduce((a,b)=>Math.abs(b.w-wave)<Math.abs(a.w-wave)?b:a);return `${s.name}: ${fmt(p.y)}`});let boxW=Math.min(W-20,Math.max(155,...text.map(s=>ctx.measureText(s).width+18)));let bx=Math.min(Math.max(hover+10,8),W-boxW-8),by=T+10;ctx.fillStyle='#24364a';ctx.fillRect(bx,by,boxW,22+text.length*18);ctx.fillStyle='#fff';ctx.textAlign='left';ctx.fillText(`${fmt(wave,2)} nm`,bx+9,by+13);text.forEach((s,i)=>ctx.fillText(s,bx+9,by+32+i*18))}}
+$('smooth').addEventListener('change',draw);$('ymode').addEventListener('change',()=>{const manual=$('ymode').value==='manual';$('ymin').disabled=!manual;$('ymax').disabled=!manual;if(manual){const vals=[...selected].flatMap(i=>(series[i]?.data||[]).map(p=>p.y));if(vals.length){const lo=Math.min(0,...vals),hi=Math.max(...vals),pad=Math.max(1,(hi-lo)*.07);if(!$('ymin').value)$('ymin').value=String(Math.floor(lo-pad));if(!$('ymax').value)$('ymax').value=String(Math.ceil(hi+pad))}}draw()});['ymin','ymax'].forEach(id=>$(id).addEventListener('input',draw));$('yreset').addEventListener('click',()=>{$('ymode').value='auto';$('ymin').value='';$('ymax').value='';$('ymin').disabled=true;$('ymax').disabled=true;draw()});$('chart').addEventListener('mousemove',e=>{hover=e.clientX-$('chart').getBoundingClientRect().left;draw()});$('chart').addEventListener('mouseleave',()=>{hover=null;draw()});window.addEventListener('resize',draw);
+$('drop').onclick=()=>$('file').click();$('drop').ondragover=e=>{e.preventDefault();$('drop').style.borderColor='#4ce2b6'};$('drop').ondragleave=()=>$('drop').style.borderColor='';$('drop').ondrop=e=>{e.preventDefault();$('drop').style.borderColor='';if(e.dataTransfer.files.length)load(e.dataTransfer.files[0])};$('file').onchange=e=>{if(e.target.files[0])load(e.target.files[0])};
+async function load(file){try{if(typeof XLSX==='undefined')throw Error('Excel解析套件尚未載入，請重新整理頁面或聯絡管理員。');const ab=await file.arrayBuffer();workbook=XLSX.read(ab,{type:'array'});crossCache.clear();$('sheet').innerHTML=workbook.SheetNames.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');$('sheet').disabled=false;$('apply').disabled=false;const preferred=workbook.SheetNames.find(s=>s.trim()==='新鮮平均')||workbook.SheetNames.find(s=>s.trim()==='光強')||workbook.SheetNames[0];$('sheet').value=preferred;populateCross();if($('compareMode').value==='cross')analyzeCross();else parseSheet(preferred);$('status').innerHTML+=`<span class="sub">　檔案：${escapeHtml(file.name)}</span>`}catch(e){$('status').innerHTML=`<span class="warning">無法匯入：${escapeHtml(e.message)}</span>`}}$('sheet').onchange=()=>{try{parseSheet($('sheet').value)}catch(e){$('status').innerHTML='<span class="warning">工作表讀取失敗：'+escapeHtml(e.message)+'</span>'}};$('wave').onchange=analyze;$('apply').onclick=analyze;$('xstep').addEventListener('change',draw);
+$('demo').onclick=()=>{headers=['波長','新鮮辣椒1','新鮮辣椒2','蟲害辣椒1','腐爛辣椒1'];rows=Array.from({length:61},(_,i)=>{const w=600+i;return [w,420+3650*Math.exp(-.5*((w-630)/8.8)**2),380+3380*Math.exp(-.5*((w-632)/9.5)**2),460+2580*Math.exp(-.5*((w-626)/10)**2),540+1600*Math.exp(-.5*((w-635)/11)**2)]});$('sheet').innerHTML='<option>內建示範（非實測）</option>';$('sheet').disabled=true;$('wave').innerHTML=headers.map((s,i)=>`<option value="${i}">${s}</option>`).join('');$('wave').disabled=false;$('wave').value='0';$('apply').disabled=false;analyze();$('status').innerHTML+='<span class="warning">　目前為模擬曲線，並非你的實驗數據。</span>'};
+function csvEscape(v){let s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}function downloadCsv(name,data){const text='\ufeff'+data.map(row=>row.map(csvEscape).join(',')).join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}$('export').onclick=()=>downloadCsv('ChiliScan_光譜特徵.csv',[['樣本名稱','波峰波長(nm)','波峰強度','平均強度','最低強度','量測點數'],...series.map(s=>{const f=feature(s);return [f.name,f.w,f.max,f.mean,f.min,f.n]})]);$('exportRaw').onclick=()=>{const picked=[...selected].map(i=>series[i]).filter(Boolean);if(!picked.length){alert('請先勾選樣本');return}let wavelengths=[...new Set(picked.flatMap(s=>s.data.map(p=>p.w)))].sort((a,b)=>a-b);downloadCsv('ChiliScan_選定波段.csv',[['波長(nm)',...picked.map(s=>s.name)],...wavelengths.map(w=>[w,...picked.map(s=>s.data.find(p=>p.w===w)?.y??'')])])};draw();
+</script><script src="js/language.js?v=20261120-6"></script></body></html>
