@@ -338,12 +338,26 @@
         `<li>${escapeHtml(sample.name)}（${labelName(sample.label)}，RMSE ${distance.toFixed(4)}）</li>`
       ).join('');
       const votes = result.prediction.votes;
+      const totalVotes = votes.fresh + votes.rotten;
+      const freshPercent = totalVotes ? (100 * votes.fresh / totalVotes).toFixed(1) : '0.0';
+      const rottenPercent = totalVotes ? (100 * votes.rotten / totalVotes).toFixed(1) : '0.0';
       const displayedLabel = labelName(result.prediction.label);
       const className = result.prediction.label === 'rotten' ? 'result-label rotten' : 'result-label';
       return `<article class="result-card">
         <h3>${escapeHtml(result.name)}</h3>
         <span class="${className}">暫定較接近：${displayedLabel}</span>
-        <p>有效共同波長：${result.sharedCount}/${referenceSet.wavelengths.length} 點；近鄰投票：新鮮 ${votes.fresh}、腐爛 ${votes.rotten}。</p>
+        <p>有效共同波長：${result.sharedCount}/${referenceSet.wavelengths.length} 點</p>
+        <div class="vote-share">
+          <div class="vote-share-labels">
+            <span class="fresh">新鮮 <strong>${freshPercent}%</strong></span>
+            <span class="rotten">腐爛 <strong>${rottenPercent}%</strong></span>
+          </div>
+          <div class="vote-share-bar" role="img" aria-label="近鄰投票占比：新鮮 ${freshPercent}%，腐爛 ${rottenPercent}%，不是機率">
+            <span class="fresh" style="width:${freshPercent}%"></span>
+            <span class="rotten" style="width:${rottenPercent}%"></span>
+          </div>
+          <small>依 3 個最近參考樣本的投票占比，不是機率。</small>
+        </div>
         <ol>${neighbors}</ol>
       </article>`;
     }).join('');
