@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ChiliScan｜吸光度新鮮／腐爛判斷</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/classifier.css">
+  <script defer src="js/xlsx.full.min.js"></script>
+  <script defer src="js/classifier.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand"><span>◈</span> ChiliScan <span>／ 新鮮・腐爛判斷</span></div>
+      <a class="btn secondary" href="index.html">返回光譜分析</a>
+    </header>
+
+    <div class="intro">
+      使用 620–680 nm 吸光度參考曲線進行本機比對。資料只在此瀏覽器處理，不會上傳；此功能為實驗版，結果不是已驗證的食品安全判定。
+    </div>
+
+    <main>
+      <section class="panel">
+        <h2>01　載入參考資料（首次使用或更新時）</h2>
+        <p class="note">選擇含「新鮮」與「腐爛」兩個工作表的吸光度參考檔。載入後會儲存在此瀏覽器，之後可直接上傳待測資料。</p>
+        <label class="upload classifier-upload" for="referenceFile">
+          <strong>選擇新鮮／腐爛吸光度參考檔</strong>
+          <span class="sub" id="referenceFilename">支援 .xlsx、.xls、.csv</span>
+          <input id="referenceFile" type="file" accept=".xlsx,.xls,.csv">
+        </label>
+        <div class="tools">
+          <button class="btn" id="loadReference" type="button" disabled>載入並儲存參考資料</button>
+          <button class="btn secondary" id="clearReference" type="button" disabled>清除本機參考資料</button>
+        </div>
+        <div class="status" id="referenceStatus" role="status">尚未載入參考資料。</div>
+        <div class="validation-banner" id="validationStatus" hidden></div>
+      </section>
+
+      <section class="panel">
+        <h2>02　上傳待測資料</h2>
+        <p class="note">每個樣本請使用一欄已平均的光譜。原始光強資料需在同一工作表含「標準白」欄；系統會先計算吸光度 A = −log10(樣本平均光強／標準白光強度)。</p>
+        <label class="upload classifier-upload" for="queryFile">
+          <strong>選擇待測 Excel／CSV</strong>
+          <span class="sub" id="queryFilename">可包含一個或多個待測樣本</span>
+          <input id="queryFile" type="file" accept=".xlsx,.xls,.csv">
+        </label>
+        <div class="tools classifier-controls">
+          <label class="field">
+            <span>待測資料格式</span>
+            <select id="queryMode">
+              <option value="auto">自動：有標準白欄就換算，否則視為吸光度</option>
+              <option value="absorbance">已是吸光度</option>
+              <option value="intensity">原始光強（需有標準白欄）</option>
+            </select>
+          </label>
+          <button class="btn" id="classify" type="button" disabled>比對新鮮／腐爛</button>
+        </div>
+        <div class="status" id="queryStatus" role="status">請先載入參考資料，再選擇待測檔案。</div>
+      </section>
+
+      <section class="panel" id="resultsPanel" hidden>
+        <h2>03　比對結果</h2>
+        <div class="validation-banner warning-banner" id="resultWarning"></div>
+        <div class="result-grid" id="resultList"></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
