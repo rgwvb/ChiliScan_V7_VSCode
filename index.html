@@ -25,20 +25,35 @@
     <section class="panel">
       <h2 data-i18n="importTitle">01　匯入光譜資料</h2>
       <div class="upload" id="drop" role="button" tabindex="0" aria-label="Choose spectral data file">
-        <strong data-i18n="uploadTitle">⬆ 點擊選擇 Excel / CSV，或將檔案拖曳到這裡</strong>
-        <div class="sub" data-i18n="uploadHint">支援 .xlsx、.xls、.csv；匯入後可切換工作表；預設分析 620–680 nm，曲線可切換平滑／原始顯示</div>
+        <strong data-i18n="uploadTitle">選擇 Excel / CSV，或將檔案拖曳到這裡</strong>
+        <div class="sub" data-i18n="uploadHint">支援 .xlsx、.xls、.csv。三次量測放在同一工作表不同欄，例如：辣椒1、辣椒2、辣椒3。</div>
         <input type="file" id="file" accept=".xlsx,.xls,.csv" hidden>
       </div>
-      <div class="tools">
-        <label class="field"><span data-i18n="sheetLabel">工作表（優先：新鮮平均／光強）</span><select id="sheet" disabled><option data-i18n="notImported">尚未匯入</option></select></label>
-        <label class="field"><span data-i18n="wavelengthLabel">波長欄</span><select id="wave" disabled><option data-i18n="autoDetect">自動辨識</option></select></label>
-        <label class="field"><span data-i18n="startWavelength">起始波長（nm）</span><input id="from" type="number" value="620" step="1"></label>
-        <label class="field"><span data-i18n="endWavelength">結束波長（nm）</span><input id="to" type="number" value="680" step="1"></label>
-        <label class="field"><span data-i18n="xStep">X軸刻度間距（nm）</span><input id="xstep" type="number" value="10" min="0.01" step="any"></label>
-        <label class="field"><span data-i18n="replicateModeLabel">重複量測平均</span><select id="replicateMode"><option value="individual" data-i18n="replicateIndividual">只顯示每筆量測</option><option value="average" data-i18n="replicateAverage" selected>只顯示自動平均</option><option value="both" data-i18n="replicateBoth">顯示每筆＋平均</option></select></label>
-        <button class="btn secondary" id="presetBand" type="button" data-i18n="setBand">設定 620–680 nm</button>
-        <button class="btn" id="apply" type="button" disabled data-i18n="reanalyze">重新分析</button>
-        <button class="btn secondary" id="demo" type="button" data-i18n="demo">載入示範資料</button>
+      <div class="workflow-settings">
+        <div class="setting-group">
+          <div class="setting-heading">
+            <strong data-i18n="rangeSettings">資料與波段</strong>
+            <span data-i18n="autoUpdateHint">匯入後會自動分析；修改設定後結果也會即時更新。</span>
+          </div>
+          <div class="tools">
+            <label class="field"><span data-i18n="sheetLabel">工作表（優先：新鮮平均／光強）</span><select id="sheet" disabled><option data-i18n="notImported">尚未匯入</option></select></label>
+            <label class="field"><span data-i18n="wavelengthLabel">波長欄</span><select id="wave" disabled><option data-i18n="autoDetect">自動辨識</option></select></label>
+            <label class="field"><span data-i18n="startWavelength">起始波長（nm）</span><input id="from" type="number" value="620" step="1"></label>
+            <label class="field"><span data-i18n="endWavelength">結束波長（nm）</span><input id="to" type="number" value="680" step="1"></label>
+            <label class="field"><span data-i18n="xStep">X軸刻度間距（nm）</span><input id="xstep" type="number" value="10" min="0.01" step="any"></label>
+            <button class="btn secondary" id="presetBand" type="button" data-i18n="setBand">設定 620–680 nm</button>
+          </div>
+        </div>
+        <div class="setting-group replicate-group">
+          <div class="setting-heading">
+            <strong data-i18n="replicateSettings">重複量測處理</strong>
+            <span data-i18n="replicateHint">同一樣本的三筆資料請用相同名稱加 1、2、3；程式會依相同波長逐點平均。</span>
+          </div>
+          <label class="field"><span data-i18n="replicateModeLabel">平均方式</span><select id="replicateMode"><option value="individual" data-i18n="replicateIndividual">只顯示每筆量測</option><option value="average" data-i18n="replicateAverage" selected>只顯示自動平均</option><option value="both" data-i18n="replicateBoth">顯示每筆＋平均</option></select></label>
+        </div>
+        <div class="workflow-actions">
+          <button class="btn secondary" id="demo" type="button" data-i18n="demo">載入示範資料</button>
+        </div>
       </div>
       <div class="status" id="status" role="status" data-i18n="waiting">等待資料匯入。</div>
     </section>
