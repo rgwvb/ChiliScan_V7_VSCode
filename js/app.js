@@ -412,7 +412,22 @@ $('compareMode').onchange=()=>{const cross=$('compareMode').value==='cross';$('c
 $('selectRecommended').onclick=()=>{const wanted=new Set(['新鮮平均','蟲害平均','腐爛平均']);document.querySelectorAll('.cross-sheet').forEach(el=>{el.checked=wanted.has(el.dataset.sheet)&&!el.disabled});document.querySelectorAll('.cross-sample').forEach(el=>{let first=true;document.querySelectorAll('.cross-sample').forEach(candidate=>{if(candidate.dataset.sheet===el.dataset.sheet&&!el.checked&&first){first=false}});const isFirst=[...document.querySelectorAll('.cross-sample')].find(candidate=>candidate.dataset.sheet===el.dataset.sheet)===el;el.checked=wanted.has(el.dataset.sheet)&&isFirst});analyzeCross()};
 $('crossApply').onclick=analyzeCross;
 $('crossAll').onclick=()=>{document.querySelectorAll('.cross-sheet:not(:disabled)').forEach(el=>el.checked=true);document.querySelectorAll('.cross-sample').forEach(el=>el.checked=true);analyzeCross()};
-$('crossSheets').addEventListener('change',e=>{if(e.target.matches('.cross-sheet')){const name=e.target.dataset.sheet;document.querySelectorAll('.cross-sample').forEach(el=>{if(el.dataset.sheet===name){if(!e.target.checked)el.checked=false;else if(![...document.querySelectorAll('.cross-sample')].some(x=>x.dataset.sheet===name&&x.checked))el.checked=true}})}else if(e.target.matches('.cross-sample')&&e.target.checked){document.querySelectorAll('.cross-sheet').forEach(el=>{if(el.dataset.sheet===e.target.dataset.sheet)el.checked=true})}analyzeCross()});
+$('crossSheets').addEventListener('click',e=>{
+ if(!e.target.matches('.cross-sheet')||e.target.checked)return;
+ const samples=[...document.querySelectorAll('.cross-sample')].filter(el=>el.dataset.sheet===e.target.dataset.sheet);
+ const checkedCount=samples.filter(el=>el.checked).length;
+ if(checkedCount>0&&checkedCount<samples.length){
+  e.preventDefault();e.target.checked=true;samples.forEach(el=>el.checked=true);analyzeCross();
+ }
+});
+$('crossSheets').addEventListener('change',e=>{
+ if(e.target.matches('.cross-sheet')){
+  document.querySelectorAll('.cross-sample').forEach(el=>{if(el.dataset.sheet===e.target.dataset.sheet)el.checked=e.target.checked});
+ }else if(e.target.matches('.cross-sample')&&e.target.checked){
+  document.querySelectorAll('.cross-sheet').forEach(el=>{if(el.dataset.sheet===e.target.dataset.sheet)el.checked=true});
+ }
+ analyzeCross();
+});
 // 快速套用指定波段；若已有資料，立即重新分析並更新匯出內容。
 $('presetBand').onclick=()=>{$('from').value='620';$('to').value='680';if(workbook||demoDataLoaded)analyze()};
 $('replicateMode').addEventListener('change',()=>{
