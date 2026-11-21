@@ -177,7 +177,7 @@ const uiTranslations={
   rawWavelength:['波長 (nm)','Wavelength (nm)'],
   rawWaiting:['匯入資料後顯示波段數據','Band data appears after import'],
   jetsonTitle:['NVIDIA Kumo-Tabular 光譜 AI 判斷','NVIDIA Kumo-Tabular Spectral AI'],
-  jetsonHint:['勾選的光譜會作為待判斷樣本；未勾選且已標籤的光譜會作為參考資料，送往你設定的安全 API。NVIDIA 金鑰只應放在後端環境變數，切勿輸入此頁或提交至 GitHub。','Checked spectra are queries; unchecked spectra with assigned labels are the reference context sent to your configured API. Keep the NVIDIA key only in the backend environment; never enter it here or commit it to GitHub.'],
+  jetsonHint:['勾選的光譜會作為待判斷樣本；未勾選且已標籤的光譜會作為參考資料，送往你設定的安全 API。NVIDIA 金鑰只應放在後端環境變數；ChiliScan 權杖會保存在此瀏覽器以供下次自動連線，請勿在共用裝置使用。','Checked spectra are queries; unchecked spectra with assigned labels are the reference context sent to your configured API. Keep the NVIDIA key only in the backend environment. The ChiliScan token is saved in this browser for automatic reconnection; do not enable this on a shared device.'],
   jetsonUrlLabel:['安全後端 API 網址（不是 NVIDIA 模型頁）','Secure backend API URL (not the NVIDIA model page)'],
   jetsonTokenLabel:['ChiliScan API 權杖（不是 NVIDIA 金鑰）','ChiliScan API token (not the NVIDIA key)'],
   jetsonConnect:['測試 API 連線','Test API Connection'],
@@ -489,6 +489,21 @@ async function connectJetson(){
  }catch(error){jetsonPhase='error';jetsonDetail=error.message||String(error)}
  renderJetsonStatus();
 }
+const JETSON_URL_STORAGE_KEY='chiliscan-kumo-api-url';
+const JETSON_TOKEN_STORAGE_KEY='chiliscan-kumo-api-token';
+function persistJetsonSettings(){
+ const url=$('jetsonUrl').value;
+ const token=$('jetsonToken').value;
+ if(url)localStorage.setItem(JETSON_URL_STORAGE_KEY,url);
+ else localStorage.removeItem(JETSON_URL_STORAGE_KEY);
+ if(token)localStorage.setItem(JETSON_TOKEN_STORAGE_KEY,token);
+ else localStorage.removeItem(JETSON_TOKEN_STORAGE_KEY);
+}
+function restoreJetsonSettings(){
+ $('jetsonUrl').value=localStorage.getItem(JETSON_URL_STORAGE_KEY)||'';
+ $('jetsonToken').value=localStorage.getItem(JETSON_TOKEN_STORAGE_KEY)||'';
+ if($('jetsonUrl').value.trim()&&$('jetsonToken').value.trim())connectJetson();
+}
 async function classifyWithJetson(){
  const spectra=selectedJetsonSpectra();
  const context=selectedJetsonContext();
@@ -534,6 +549,7 @@ $('jetsonConnect').addEventListener('click',connectJetson);
 $('jetsonPredict').addEventListener('click',classifyWithJetson);
 ['jetsonUrl','jetsonToken'].forEach(id=>$(id).addEventListener('input',()=>{
  jetsonConnection=null;jetsonDetail='';jetsonPhase='idle';clearJetsonPredictions();
+ persistJetsonSettings();
 }));
 
 // =====================================================
@@ -800,4 +816,4 @@ $('demo').onclick=()=>{demoDataLoaded=true;headers=currentLanguage==='en'?['Wave
 // 區塊六：CSV匯出
 // =====================================================
 // export：特徵與原始數據分開匯出，避免把統計值與逐波長原始值混在同一份檔案。
-function csvEscape(v){let s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}function downloadCsv(name,data){const text='\ufeff'+data.map(row=>row.map(csvEscape).join(',')).join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}$('export').onclick=()=>{const headers=currentLanguage==='en'?['Sample Name','Peak Wavelength(nm)','Peak Intensity','Mean Intensity','Minimum Intensity','Measurement Points']:['樣本名稱','波峰波長(nm)','波峰強度','平均強度','最低強度','量測點數'];downloadCsv(currentLanguage==='en'?'ChiliScan_Spectral_Features.csv':'ChiliScan_光譜特徵.csv',[headers,...series.map(s=>{const f=feature(s);return [f.name,f.w,f.max,f.mean,f.min,f.n]})])};$('exportRaw').onclick=()=>{const picked=[...selected].map(i=>series[i]).filter(Boolean);if(!picked.length){alert(currentLanguage==='en'?'Please select at least one sample':'請先勾選樣本');return}let wavelengths=[...new Set(picked.flatMap(s=>s.data.map(p=>p.w)))].sort((a,b)=>a-b);downloadCsv(currentLanguage==='en'?'ChiliScan_Selected_Band.csv':'ChiliScan_選定波段.csv',[[(currentLanguage==='en'?'Wavelength(nm)':'波長(nm)'),...picked.map(s=>s.name)],...wavelengths.map(w=>[w,...picked.map(s=>s.data.find(p=>p.w===w)?.y??'')])])};applyLanguage(currentLanguage);draw();
+function csvEscape(v){let s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}function downloadCsv(name,data){const text='\ufeff'+data.map(row=>row.map(csvEscape).join(',')).join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}$('export').onclick=()=>{const headers=currentLanguage==='en'?['Sample Name','Peak Wavelength(nm)','Peak Intensity','Mean Intensity','Minimum Intensity','Measurement Points']:['樣本名稱','波峰波長(nm)','波峰強度','平均強度','最低強度','量測點數'];downloadCsv(currentLanguage==='en'?'ChiliScan_Spectral_Features.csv':'ChiliScan_光譜特徵.csv',[headers,...series.map(s=>{const f=feature(s);return [f.name,f.w,f.max,f.mean,f.min,f.n]})])};$('exportRaw').onclick=()=>{const picked=[...selected].map(i=>series[i]).filter(Boolean);if(!picked.length){alert(currentLanguage==='en'?'Please select at least one sample':'請先勾選樣本');return}let wavelengths=[...new Set(picked.flatMap(s=>s.data.map(p=>p.w)))].sort((a,b)=>a-b);downloadCsv(currentLanguage==='en'?'ChiliScan_Selected_Band.csv':'ChiliScan_選定波段.csv',[[(currentLanguage==='en'?'Wavelength(nm)':'波長(nm)'),...picked.map(s=>s.name)],...wavelengths.map(w=>[w,...picked.map(s=>s.data.find(p=>p.w===w)?.y??'')])])};applyLanguage(currentLanguage);draw();restoreJetsonSettings();
