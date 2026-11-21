@@ -543,6 +543,15 @@ td:first-child { font-weight: 700; color: #dfeaf4; }
 
 .raw-data-controls .status { margin-top: 0; }
 
+.jetson-tools { align-items: end; }
+.jetson-tools .field:first-child { flex: 1 1 270px; }
+.jetson-tools .field:nth-child(2) { flex: 1 1 190px; }
+.jetson-tools .field input { width: 100%; }
+.jetson-results { margin-top: 14px; }
+#jetsonStatus[data-state="ready"] { color: #72e1b7; }
+#jetsonStatus[data-state="no-model"],
+#jetsonStatus[data-state="error"] { color: #f7c27b; }
+
 [hidden] { display: none !important; }
 
 ::-webkit-scrollbar { width: 9px; height: 9px; }

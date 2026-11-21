@@ -20,7 +20,7 @@
       </div>
     </header>
 
-    <div class="intro" data-i18n="intro">匯入 Excel / CSV 光譜資料，自動辨識波長欄、繪製樣本曲線，計算指定波段的光譜特徵。所有分析在瀏覽器內進行，不會上傳資料至伺服器。</div>
+    <div class="intro" data-i18n="intro">匯入 Excel / CSV 光譜資料，自動辨識波長欄、繪製樣本曲線，計算指定波段的光譜特徵。一般分析在瀏覽器內進行；只有按下 Jetson AI 判斷時，勾選的光譜才會送到你設定的裝置。</div>
 
     <section class="panel">
       <h2 data-i18n="importTitle">01　匯入光譜資料</h2>
@@ -82,6 +82,24 @@
         <div class="stat"><small data-i18n="peakIntensity">波峰強度</small><b id="peakI">—</b></div>
         <div class="stat"><small data-i18n="meanIntensity">區間平均強度</small><b id="mean">—</b></div>
         <div class="stat"><small data-i18n="validPoints">有效量測點數</small><b id="points">—</b><em data-i18n="points">點</em></div>
+      </div>
+    </section>
+
+    <section class="panel jetson-panel">
+      <h2 data-i18n="jetsonTitle">NVIDIA Jetson Orin Nano 光譜 AI 判斷</h2>
+      <p class="note" data-i18n="jetsonHint">只會傳送目前勾選的分析曲線。GitHub Pages 需要 HTTPS Jetson API；存取權杖只保留在此頁面，不會儲存。</p>
+      <div class="tools jetson-tools">
+        <label class="field"><span data-i18n="jetsonUrlLabel">Jetson API 網址（HTTPS）</span><input id="jetsonUrl" type="url" autocomplete="url" placeholder="https://jetson.example"></label>
+        <label class="field"><span data-i18n="jetsonTokenLabel">存取權杖</span><input id="jetsonToken" type="password" autocomplete="new-password"></label>
+        <button class="btn secondary" id="jetsonConnect" type="button" data-i18n="jetsonConnect">測試 Jetson 連線</button>
+        <button class="btn" id="jetsonPredict" type="button" disabled data-i18n="jetsonPredict">判斷已選的平均光譜</button>
+      </div>
+      <div class="status" id="jetsonStatus" role="status" data-i18n="jetsonIdle">尚未連線。需要 Jetson 分析服務與已載入的分類模型。</div>
+      <div class="tablewrap jetson-results" id="jetsonResults" hidden>
+        <table>
+          <thead><tr><th data-i18n="jetsonSample">樣本</th><th data-i18n="jetsonClass">判斷結果</th><th data-i18n="jetsonConfidence">信心度</th></tr></thead>
+          <tbody id="jetsonResultBody"></tbody>
+        </table>
       </div>
     </section>
 

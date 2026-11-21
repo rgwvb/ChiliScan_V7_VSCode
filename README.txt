@@ -6,7 +6,7 @@ ChiliScan 是一個純前端的光譜資料分析工具。使用者匯入辣椒�
 量測資料後，程式會自動配對工作表中的波長欄與光強欄，繪製光譜曲線，並計算指定波段的
 波峰、平均、最低強度與有效量測點數。
 
-所有分析都在瀏覽器中執行，不會把原始量測資料上傳到伺服器。
+一般分析都在瀏覽器中執行，不會上傳原始量測資料。只有使用者設定 Jetson API 並按下 AI 判斷時，才會傳送目前勾選的分析曲線。
 
 執行流程
 --------
@@ -36,7 +36,7 @@ ChiliScan 是一個純前端的光譜資料分析工具。使用者匯入辣椒�
 
 - js/app.js
   檔案讀取、語言切換、Excel / CSV解析、單一工作表與跨工作表分析、
-  特徵計算、Canvas繪圖、原始數據分頁及CSV匯出。
+  特徵計算、Canvas繪圖、原始數據分頁及CSV匯出；另負責 Jetson API 連線、送出勾選光譜與顯示分類回應。
 
 - js/xlsx.full.min.js
   SheetJS Excel解析套件，用於讀取.xlsx與.xls。
@@ -46,6 +46,9 @@ ChiliScan 是一個純前端的光譜資料分析工具。使用者匯入辣椒�
 
 - .github/workflows/pages.yml
   使用GitHub Actions自動部署到GitHub Pages。
+
+- jetson/jetson_api.py
+  Jetson Orin Nano API 骨架，提供健康檢查及光譜分類端點。尚未載入訓練模型時會明確回報模型未就緒，不會產生示意分類結果。
 
 JavaScript主要區塊
 -----------------
@@ -71,6 +74,9 @@ JavaScript主要區塊
    特徵CSV包含波峰與統計值。
    原始數據CSV包含目前勾選樣本在指定波段內的逐波長數據。
 
+7. Jetson AI
+   由使用者按下操作後，將勾選的分析曲線送至設定的 Jetson API；模型未就緒時不會顯示分類結果。
+
 重要資料變數
 ------------
 - workbook：目前載入的 Excel / CSV 工作簿物件。
@@ -81,6 +87,18 @@ JavaScript主要區塊
 - selected：目前勾選要繪製的series索引。
 - crossCache：跨工作表解析結果快取。
 - hover：圖表游標位置，用於顯示附近數值。
+
+Jetson AI 連線
+--------------
+目前網站可將勾選的光譜送到使用者設定的 Jetson API；模型訓練與實際分類尚未完成。
+
+1. 在 Jetson 上以 Python 3 執行 `jetson/jetson_api.py`，設定 `CHILISCAN_TOKEN`。
+2. 預設服務只綁定 `127.0.0.1`。不要直接將未加密的 API 暴露至網際網路。
+3. GitHub Pages 使用 HTTPS，因此跨裝置連線需要 Jetson 端有瀏覽器信任的 HTTPS 網址，並設定 `CHILISCAN_ORIGIN` 為 ChiliScan 網站來源。也可在 Jetson 上以同源方式提供網站與 API。
+4. 在網頁輸入 API 網址與權杖，測試連線後再選擇「判斷已選的平均光譜」。權杖只留在目前頁面記憶體，不會寫入儲存空間。
+5. API 現在刻意回報 `model_ready: false`；需取得標記為「新鮮／蟲害／腐爛」的實際資料、訓練並驗證模型後，才可接入推論程式。
+
+健康檢查 `GET /api/v1/health` 與分類 `POST /api/v1/predict` 都需要 `Authorization: Bearer <token>`。分類請求使用 `api_version: 1` 及 `spectra` 陣列；每筆光譜包含 `sample_name`、`wavelengths_nm`、`intensities` 和 `replicate_count`。模型就緒後，分類回應需包含 `api_version: 1` 和 `predictions` 陣列；每筆結果包含 `sample_name`、`label` 與 0 到 1 之間的 `confidence`。目前服務尚未實作模型，因此分類端點回傳 503。
 
 本機預覽
 --------
