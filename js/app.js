@@ -453,11 +453,11 @@ function jetsonApiBase(){
   throw Error(currentLanguage==='en'?'A secure page requires an HTTPS Jetson API.':'安全的 HTTPS 網頁需要使用 HTTPS Jetson API。');
  return url.href.replace(/\/+$/,'');
 }
-async function requestJetson(base,path,options={}){
+async function requestJetson(base,path,options={},timeoutMs=15000){
  const token=$('jetsonToken').value.trim();
  if(!token)throw Error(currentLanguage==='en'?'Enter the access token.':'請輸入存取權杖。');
  const controller=new AbortController();
- const timeout=setTimeout(()=>controller.abort(),15000);
+ const timeout=setTimeout(()=>controller.abort(),timeoutMs);
  try{
   const response=await fetch(`${base}${path}`,{
    ...options,
@@ -481,7 +481,7 @@ async function connectJetson(){
  jetsonConnection=null;jetsonPredictions=[];jetsonDetail='';jetsonPhase='checking';renderJetsonStatus();renderJetsonResults();
  try{
   const base=jetsonApiBase();
-  const health=await requestJetson(base,'/api/v1/health');
+  const health=await requestJetson(base,'/api/v1/health',{},90000);
   if(!health||typeof health!=='object'||health.api_version!==1||typeof health.model_ready!=='boolean')throw Error(currentLanguage==='en'?'Unsupported health response.':'Jetson 健康檢查回傳格式不受支援。');
   jetsonConnection={base,ready:health.model_ready};
   jetsonDetail=typeof health.model_name==='string'?health.model_name:'';
