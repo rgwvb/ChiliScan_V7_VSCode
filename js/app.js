@@ -127,7 +127,7 @@ const uiTranslations={
   singleSheet:['單一工作表','Single Worksheet'],
   crossSheet:['跨工作表疊加比較','Cross-Worksheet Overlay'],
   selectThree:['選取三種品質平均工作表','Select the Three Quality-Average Worksheets'],
-  crossHint:['勾選要比較的工作表，再於每張工作表內選擇樣本欄位。每個樣本會使用其左側最近的「波長」欄，不會按照資料列號強制配對。工作表名稱會加入圖例。','Select worksheets to compare and choose sample columns in each. Each sample uses the nearest wavelength column to its left; rows are not paired by row number. Worksheet names appear in the legend.'],
+  crossHint:['勾選要比較的工作表，再於每張工作表內選擇樣本欄位。平均模式下，選一筆會一併選取同工作表的同組重複量測並逐波長平均；不同工作表不會互相合併。每個樣本使用左側最近的「波長」欄，不會按照資料列號配對；工作表名稱會加入圖例。','Select worksheets to compare and choose sample columns in each. In average mode, selecting one reading also selects and averages its same-group replicates within that worksheet; worksheets are never merged. Each sample uses the nearest wavelength column to its left, rows are not paired by row number, and worksheet names appear in the legend.'],
   importFirst:['請先匯入 Excel 檔案','Import an Excel file first'],
   updateChart:['更新疊加圖表','Update Overlay Chart'],
   selectAll:['勾選所有可用樣本','Select All Available Samples'],
@@ -773,6 +773,16 @@ function readSheetSeries(name){
  crossCache.set(name,out);
  return out;
 }
+function syncCrossReplicateSelections(source){
+ if($('replicateMode').value==='individual')return;
+ const samples=[...document.querySelectorAll('.cross-sample')];
+ const groups=source?[source]:samples.filter(sample=>sample.checked);
+ groups.forEach(sample=>{
+  const checked=source?source.checked:true;
+  samples.filter(candidate=>candidate.dataset.sheet===sample.dataset.sheet&&candidate.dataset.base===sample.dataset.base)
+   .forEach(candidate=>{candidate.checked=checked});
+ });
+}
 // populateCross：依目前匯入的工作表建立跨工作表勾選介面。
 // 已勾選狀態會保留，工作表名稱則會出現在最終曲線名稱中。
 function populateCross(){
@@ -783,11 +793,12 @@ function populateCross(){
  const hasPreferred=preferred.some(x=>workbook.SheetNames.includes(x));
  const html=workbook.SheetNames.map(name=>{
   const parsed=readSheetSeries(name),isDefault=hasPreferred?preferred.includes(name):name===$('sheet').value;
-  const options=parsed.items.map((item,i)=>{const key=name+'::'+item.column,checked=previousSamples.has(key)?previousSamples.get(key):isDefault&&i===0,axisHint=item.axis===item.baseName?'':` <span class="muted">· ${escapeHtml(item.axis)}</span>`;return `<label><input type="checkbox" class="cross-sample" data-sheet="${escapeHtml(name)}" data-col="${item.column}" ${checked?'checked':''}>${escapeHtml(item.name)}${axisHint}</label>`}).join('');
+  const options=parsed.items.map((item,i)=>{const key=name+'::'+item.column,checked=previousSamples.has(key)?previousSamples.get(key):isDefault&&i===0,axisHint=item.axis===item.baseName?'':` <span class="muted">· ${escapeHtml(item.axis)}</span>`;return `<label><input type="checkbox" class="cross-sample" data-sheet="${escapeHtml(name)}" data-col="${item.column}" data-base="${escapeHtml(item.baseName)}" ${checked?'checked':''}>${escapeHtml(item.name)}${axisHint}</label>`}).join('');
   const sheetChecked=previousSheets.has(name)?previousSheets.get(name):isDefault&&parsed.items.length>0;
   const countText=currentLanguage==='en'?`${parsed.items.length} sample(s) · ${parsed.axes} wavelength column(s)`:`${parsed.items.length} 個樣本 · ${parsed.axes} 組波長欄`;
   return `<div class="cross-card"><h3><label><input class="cross-sheet" type="checkbox" data-sheet="${escapeHtml(name)}" ${sheetChecked?'checked':''} ${!parsed.items.length?'disabled':''}>${escapeHtml(name)}</label></h3>${parsed.items.length?`<div class="muted">${countText}</div><div class="cross-samples">${options}</div>`:`<div class="warning">${escapeHtml(currentLanguage==='en'?(parsed.error==='找不到波長欄'?'Wavelength column not found':parsed.error):parsed.error)}</div>`}</div>`;
  }).join('');$('crossSheets').innerHTML=html;
+ syncCrossReplicateSelections();
  $('selectRecommended').disabled=!hasPreferred;
  $('crossStatus').textContent=currentLanguage==='en'?(hasPreferred?'Available quality-average worksheets are preselected. Review the samples, then update the chart.':'No recommended quality-average worksheets found. Select worksheets manually.'):(hasPreferred?'已預選存在的品質平均工作表；請檢查各表樣本欄位，再點「更新疊加圖表」。':'沒有找到三種品質平均工作表，可手動勾選其他工作表。');
 }
@@ -820,7 +831,7 @@ function analyzeCross(){
  $('all').disabled=!series.length;$('export').disabled=!series.length;$('exportRaw').disabled=!series.length;render();
 }
 $('compareMode').onchange=()=>{const cross=$('compareMode').value==='cross';$('crossControls').hidden=!cross;$('sheet').disabled=cross||!workbook;$('wave').disabled=cross||!workbook;if(cross){if(workbook)populateCross();analyzeCross()}else{if(workbook)parseSheet($('sheet').value);else{series=[];selected.clear();render()}}};
-$('selectRecommended').onclick=()=>{const wanted=new Set(['新鮮平均','蟲害平均','腐爛平均']);document.querySelectorAll('.cross-sheet').forEach(el=>{el.checked=wanted.has(el.dataset.sheet)&&!el.disabled});document.querySelectorAll('.cross-sample').forEach(el=>{let first=true;document.querySelectorAll('.cross-sample').forEach(candidate=>{if(candidate.dataset.sheet===el.dataset.sheet&&!el.checked&&first){first=false}});const isFirst=[...document.querySelectorAll('.cross-sample')].find(candidate=>candidate.dataset.sheet===el.dataset.sheet)===el;el.checked=wanted.has(el.dataset.sheet)&&isFirst});analyzeCross()};
+$('selectRecommended').onclick=()=>{const wanted=new Set(['新鮮平均','蟲害平均','腐爛平均']);document.querySelectorAll('.cross-sheet').forEach(el=>{el.checked=wanted.has(el.dataset.sheet)&&!el.disabled});document.querySelectorAll('.cross-sample').forEach(el=>{let first=true;document.querySelectorAll('.cross-sample').forEach(candidate=>{if(candidate.dataset.sheet===el.dataset.sheet&&!el.checked&&first){first=false}});const isFirst=[...document.querySelectorAll('.cross-sample')].find(candidate=>candidate.dataset.sheet===el.dataset.sheet)===el;el.checked=wanted.has(el.dataset.sheet)&&isFirst});syncCrossReplicateSelections();analyzeCross()};
 $('crossApply').onclick=analyzeCross;
 $('crossAll').onclick=()=>{document.querySelectorAll('.cross-sheet:not(:disabled)').forEach(el=>el.checked=true);document.querySelectorAll('.cross-sample').forEach(el=>el.checked=true);analyzeCross()};
 $('crossSheets').addEventListener('click',e=>{
@@ -834,15 +845,17 @@ $('crossSheets').addEventListener('click',e=>{
 $('crossSheets').addEventListener('change',e=>{
  if(e.target.matches('.cross-sheet')){
   document.querySelectorAll('.cross-sample').forEach(el=>{if(el.dataset.sheet===e.target.dataset.sheet)el.checked=e.target.checked});
- }else if(e.target.matches('.cross-sample')&&e.target.checked){
-  document.querySelectorAll('.cross-sheet').forEach(el=>{if(el.dataset.sheet===e.target.dataset.sheet)el.checked=true});
+ }else if(e.target.matches('.cross-sample')){
+  if(e.target.checked)document.querySelectorAll('.cross-sheet').forEach(el=>{if(el.dataset.sheet===e.target.dataset.sheet)el.checked=true});
+  syncCrossReplicateSelections(e.target);
  }
  analyzeCross();
 });
 // 快速套用指定波段；若已有資料，立即重新分析並更新匯出內容。
 $('presetBand').onclick=()=>{$('from').value='620';$('to').value='680';if(workbook||demoDataLoaded)analyze()};
 $('replicateMode').addEventListener('change',()=>{
- if(workbook)analyze();
+ if(workbook&&$('compareMode').value==='cross'){syncCrossReplicateSelections();analyzeCross()}
+ else if(workbook)analyze();
  else if(demoDataLoaded)analyze();
 });
 // =====================================================
