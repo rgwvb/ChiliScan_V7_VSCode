@@ -401,6 +401,7 @@ header {
 }
 
 .twocol > .panel { min-width: 0; }
+.twocol > .panel:last-child { align-self: start; }
 
 .samplelist {
   max-height: 346px;
