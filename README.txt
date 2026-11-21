@@ -35,35 +35,42 @@ ChiliScan 是一個純前端的光譜資料分析工具。使用者匯入辣椒�
 7. draw() 使用 Canvas 繪製座標軸、刻度、曲線與滑鼠游標提示。
 8. 匯出按鈕呼叫 downloadCsv() 建立並下載 CSV。
 
-檔案分工
---------
-- index.html
-  頁面結構與介面元素，例如上傳區、分析控制、統計卡、圖表、樣本清單與資料表。
+專案結構導覽
+------------
+VS Code 左側檔案總管顯示的是專案原始碼與設定。各資料夾和主要檔案用途如下：
 
-- css/style.css
-  深色介面、版面配置、表格、輸入控制、跨工作表卡片及手機版響應式樣式。
+- `.github/workflows/`
+  - `pages.yml`：GitHub Actions 部署設定。將網站發布到 GitHub Pages；不會啟動 Kumo 後端。
 
-- js/app.js
-  檔案讀取、語言切換、Excel / CSV解析、單一工作表與跨工作表分析、
-  特徵計算、Canvas繪圖、原始數據分頁及CSV匯出；另負責安全 API 連線、送出 Kumo 參考／待測光譜與顯示分類回應。
+- `.vscode/`
+  - `launch.json`：VS Code 的啟動設定，提供本機預覽入口。
+  - `tasks.json`：VS Code 工作清單，透過 `server.ps1` 啟動本機預覽。
 
-- js/xlsx.full.min.js
-  SheetJS Excel解析套件，用於讀取.xlsx與.xls。
+- `大腦/`
+  - `kumo_pepper_predict.py`：選用的 Python 命令列實驗程式，讀取同資料夾 CSV 後呼叫 NVIDIA Kumo；與網站頁面及 Jetson API 分開執行。
+  - `reference.csv`：命令列程式使用的已標記參考光譜。
+  - `new_samples.csv`：命令列程式要送去分類的待測光譜。這兩個 CSV 被 `.gitignore` 排除，不會提交至 Git。
 
-- classification.html、css/classifier.css、js/classifier.js
-  新鮮／腐爛吸光度實驗判斷頁、本機參考資料保存、吸光度換算及 3 近鄰比對。
+- `css/`
+  - `style.css`：首頁的共用外觀、版面、表格與響應式樣式。
+  - `classifier.css`：新鮮／腐爛判斷頁的上傳區、結果卡片與比例顯示樣式。
 
-- server.ps1
-  啟動本機HTTP預覽伺服器，預設位址為 http://127.0.0.1:5500/
+- `jetson/`
+  - `jetson_api.py`：安全後端 API，負責健康檢查、權限驗證、資料檢查，再把分類請求轉送至 NVIDIA Kumo。金鑰由伺服器環境變數提供。
 
-- .github/workflows/pages.yml
-  使用GitHub Actions自動部署到GitHub Pages。
+- `js/`
+  - `app.js`：首頁主要功能，包括讀取與分析光譜、繪圖、匯出，以及使用者啟動時的 Kumo API 連線與分類。
+  - `classifier.js`：新鮮／腐爛頁的吸光度處理、3 近鄰判斷、結果呈現及中英文切換；語言選擇會與首頁共用並記住。
+  - `language.js`：未由目前頁面載入的舊翻譯工具；首頁由 `app.js` 切換語言，判斷頁由 `classifier.js` 切換語言。
+  - `xlsx.full.min.js`：SheetJS 函式庫，用來讀取 Excel 檔案；屬於第三方套件，不是 ChiliScan 的業務邏輯。
 
-- jetson/jetson_api.py
-  安全後端代理，提供健康檢查及 Kumo 光譜分類端點；ChiliScan 權杖與 NVIDIA 金鑰都由伺服器環境變數提供，不會傳給瀏覽器。
-
-- 大腦/kumo_pepper_predict.py
-  可選的命令列實驗工具，從同資料夾的 reference.csv 與 new_samples.csv 直接呼叫 Kumo；它不會啟動網站 API，也不會使用瀏覽器內的分類介面。
+- 根目錄主要檔案
+  - `index.html`：光譜分析首頁的頁面結構。
+  - `classification.html`：新鮮／腐爛吸光度判斷頁的頁面結構，包含中英文切換按鈕。
+  - `README.txt`：本專案的功能、操作方式與部署說明。
+  - `render.yaml`：Render 的 Kumo 後端部署設定；與 GitHub Pages 的靜態網站部署分開。
+  - `server.ps1`：本機 HTTP 預覽伺服器，預設網址為 `http://127.0.0.1:5500/`。
+  - `.gitignore`：指定不提交至 Git 的檔案；目前排除 `大腦/reference.csv` 與 `大腦/new_samples.csv`。
 
 JavaScript主要區塊
 -----------------
