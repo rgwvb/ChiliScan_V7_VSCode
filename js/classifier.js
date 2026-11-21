@@ -339,9 +339,19 @@
       }
       const displayedLabel = labelName(result.prediction.label);
       const className = result.prediction.label === 'rotten' ? 'result-label rotten' : 'result-label';
+      const votes = result.prediction.votes;
+      const voteCount = votes.fresh + votes.rotten;
+      const voteRate = (count) => `${(100 * count / voteCount).toFixed(1)}%`;
       return `<article class="result-card">
         <h3>${escapeHtml(result.name)}</h3>
         <span class="${className}">暫定較接近：${displayedLabel}</span>
+        <div class="result-votes">
+          <p class="result-votes-title">近鄰投票比例（不是準確率）</p>
+          <div class="result-vote-values">
+            <span>新鮮：${votes.fresh}/${voteCount}（${voteRate(votes.fresh)}）</span>
+            <span>腐爛：${votes.rotten}/${voteCount}（${voteRate(votes.rotten)}）</span>
+          </div>
+        </div>
         <p>有效共同波長：${result.sharedCount}/${referenceSet.wavelengths.length} 點</p>
       </article>`;
     }).join('');

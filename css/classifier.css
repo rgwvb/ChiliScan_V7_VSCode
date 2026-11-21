@@ -82,6 +82,28 @@
   color: #ffd18a;
 }
 
+.result-votes {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, .2);
+  border-radius: 10px;
+  background: rgba(31, 45, 61, .45);
+}
+
+.result-votes-title {
+  margin: 0 0 6px;
+  color: #aebccd;
+  font-size: 13px;
+}
+
+.result-vote-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  color: #e2e8f0;
+  font-weight: 700;
+}
+
 .result-card p {
   margin: 8px 0 0;
   color: #c1ccda;
