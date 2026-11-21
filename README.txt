@@ -98,8 +98,9 @@ NVIDIA Kumo AI 連線
 1. 在安全後端設定 `CHILISCAN_TOKEN`、`NVIDIA_API_KEY`、`NVIDIA_KUMO_PREDICT_URL`。Kumo Catalog 預測網址為 `https://ai.api.nvidia.com/v1/structured-data/nvidia/kumo-tabular/predictions`。NVIDIA 金鑰只能保存在後端環境變數，絕不可貼入網頁、提交 Git 或放在公開靜態網站。
 2. 設定 `CHILISCAN_ORIGIN` 為 ChiliScan 網站來源。服務預設綁定 `127.0.0.1`；部署到網際網路時必須使用受信任的 HTTPS 反向代理，不要直接暴露未加密服務。
 3. 網頁輸入後端 HTTPS 網址及 `CHILISCAN_TOKEN`，測試連線。網址與權杖會儲存在目前瀏覽器的 localStorage，之後開啟頁面會自動測試連線；清除網站資料或換瀏覽器／裝置後需重新輸入。權杖只適合保存在個人可信任的瀏覽器，避免在共用裝置使用。
-4. 在樣本清單中將已知品質標籤指定給未勾選的參考樣本，並勾選要預測的樣本。每類至少要有一筆參考光譜；所有光譜的波長位置必須一致。
-5. 確認資料已去識別且可分享後，再按 Kumo 分類。只有該操作會將參考與待測光譜傳送到你設定的後端及 NVIDIA API。
+4. 匯入已知樣本資料，在樣本清單將未勾選的參考樣本指定品質標籤，按「保存未勾選且已標記樣本為參考資料」建立本機參考庫。參考光譜及標籤只存在瀏覽器 localStorage；刪除網站資料會一併刪除參考庫。
+5. 後續匯入待測光譜時，勾選要預測的樣本；已保存的參考庫會自動作為 Kumo context。每類至少要有一筆參考光譜，且待測光譜的波長位置須與參考庫完全一致。按分類時，參考與待測光譜會送到安全後端及 NVIDIA API。
+6. 確認資料已去識別且可分享後，再按 Kumo 分類。只有該操作會將參考與待測光譜傳送到你設定的後端及 NVIDIA API。
 
 GitHub Pages 只託管靜態網站，不會執行 `jetson/jetson_api.py`。網站上的 Kumo 分類功能要等你另外部署並設定安全 HTTPS 後端後才能使用。
 

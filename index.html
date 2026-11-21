@@ -88,8 +88,16 @@
     <section class="panel jetson-panel">
       <h2 data-i18n="jetsonTitle">NVIDIA Kumo-Tabular 光譜 AI 判斷</h2>
       <p class="note" data-i18n="jetsonHint">勾選的光譜會作為待判斷樣本；未勾選且已標籤的光譜會作為參考資料，送往你設定的安全 API。NVIDIA 金鑰只應放在後端環境變數，切勿輸入此頁或提交至 GitHub。</p>
-      <p class="note" data-i18n="jetsonContextHint">先在未勾選的樣本選單指定已知標籤（新鮮／蟲害／腐爛），這些樣本作為 Kumo 參考資料；勾選樣本才會被預測。每一類都需至少一筆參考樣本，實驗準確度仍需更多獨立樣本驗證。</p>
+      <p class="note" data-i18n="jetsonContextHint">先在未勾選的樣本選單指定已知標籤（新鮮／蟲害／腐爛），再保存到本機參考樣本庫。之後匯入新資料時，已保存的樣本會作為參考；勾選樣本才會被預測。每一類都需至少一筆參考樣本，實驗準確度仍需更多獨立樣本驗證。</p>
       <div class="status" id="jetsonContextStatus" role="status">參考資料：新鮮 0、蟲害 0、腐爛 0 筆。</div>
+      <div class="reference-library">
+        <p class="note" data-i18n="referenceLibraryHint">已知樣本標籤後可保存到此瀏覽器；樣本資料只在按下分類時才會傳給安全後端。波長位置必須與待測資料一致。</p>
+        <div class="tools">
+          <button class="btn secondary" id="saveJetsonReferences" type="button" data-i18n="saveReferences">保存未勾選且已標記樣本為參考資料</button>
+        </div>
+        <div class="status" id="jetsonReferenceStatus" role="status"></div>
+        <div class="reference-list" id="jetsonReferenceList"></div>
+      </div>
       <div class="tools jetson-tools">
         <label class="field"><span data-i18n="jetsonUrlLabel">安全後端 API 網址（不是 NVIDIA 模型頁）</span><input id="jetsonUrl" type="url" autocomplete="url" placeholder="https://api.example.com"></label>
         <label class="field"><span data-i18n="jetsonTokenLabel">ChiliScan API 權杖（不是 NVIDIA 金鑰）</span><input id="jetsonToken" type="password" autocomplete="new-password"></label>
