@@ -17,6 +17,10 @@
 // =====================================================
 // 區塊一：共用狀態與工具函式
 // =====================================================
+// 這裡負責：
+// 1. 保存使用中的 Excel / CSV、工作表、樣本與選取狀態。
+// 2. 提供中英文切換、數值轉換、HTML跳脈防護與格式化工具。
+// 3. 不直接處理 Excel/CSV讀取或畫圖；這些工作交給後面的區塊。
 const $=id=>document.getElementById(id);let crossSpecs=[],crossCache=new Map();let workbook=null,rows=[],headers=[],widx=-1,series=[],selected=new Set(),hover=null,rawPage=0,demoDataLoaded=false,csvImported=false;const rawPageSize=100;const palette=['#60a5fa','#34d399','#fbbf24','#fb7185','#a78bfa','#22d3ee','#f472b6','#bef264','#f97316','#93c5fd'];
 const staticTranslations={
 'pageTitle':'ChiliScan | Spectral Data Analysis Platform V7',
@@ -138,6 +142,10 @@ const uiTranslations={
   yMax:['Y軸最大值','Y-axis Maximum'],
   yMinPlaceholder:['例如 0','e.g. 0'],
   yMaxPlaceholder:['例如 4500','e.g. 4500'],
+  replicateModeLabel:['重複量測平均','Replicate Averaging'],
+  replicateIndividual:['只顯示每筆量測','Show Individual Measurements'],
+  replicateAverage:['只顯示自動平均','Show Automatic Average'],
+  replicateBoth:['顯示每筆＋平均','Show Individuals + Average'],
   resetY:['重設Y軸','Reset Y-axis'],
   curveDisplay:['曲線顯示方式','Curve Display'],
   smooth3:['平滑顯示（3點移動平均）','Smoothed (3-point moving average)'],
@@ -204,12 +212,67 @@ function fmt(x,d=2){return Number.isFinite(x)?x.toLocaleString(currentLanguage==
 function num(v){if(typeof v==='number')return Number.isFinite(v)?v:NaN;if(typeof v!=='string')return NaN;let s=v.trim().replace(/,/g,'');return s!==''&&Number.isFinite(Number(s))?Number(s):NaN}
 function sampleLabel(name,occurrence){return occurrence>1?(currentLanguage==='en'?`${name} (duplicate ${occurrence})`:`${name}（第 ${occurrence} 個同名欄）`):name}
 
+// 判斷表頭是否為重複量測，例如「新鮮辣椒1」與「新鮮辣椒2」。
+function replicateBaseName(name){
+ let base=String(name||'').trim()
+  .replace(/\s*[（(](?:第\s*)?\d+\s*(?:個)?(?:同名欄)?[)）]\s*$/u,'')
+  .replace(/\s*(?:_|-|\s)?(?:rep(?:licate)?|measurement|量測)\s*[_\-]?\s*\d+\s*$/iu,'')
+  .replace(/\s*[_\-.\s]+\d+\s*$/u,'')
+  .replace(/\d+\s*$/u,'')
+  .trim();
+ return base||String(name||'').trim();
+}
+
+// 將同名量測欄合併成逐波長平均。
+// individual：只保留原曲線；average：只保留平均；both：原曲線＋平均。
+function applyReplicateAveraging(rawSeries){
+ const mode=$('replicateMode')?.value||'average';
+ if(mode==='individual')return rawSeries;
+ const groups=new Map();
+ rawSeries.forEach(s=>{
+  const base=s.baseName||replicateBaseName(s.name);
+  if(!groups.has(base))groups.set(base,[]);
+  groups.get(base).push(s);
+ });
+ const processed=[];
+ groups.forEach((members,base)=>{
+  if(members.length<2){
+   processed.push(members[0]);
+   return;
+  }
+  if(mode==='both')processed.push(...members);
+  const wavelengthMap=new Map();
+  members.forEach(s=>{
+   s.data.forEach(p=>{
+    if(!wavelengthMap.has(p.w))wavelengthMap.set(p.w,[]);
+    wavelengthMap.get(p.w).push(p.y);
+   });
+  });
+  const data=[...wavelengthMap.entries()].map(([w,values])=>({
+   w,
+   y:values.reduce((sum,y)=>sum+y,0)/values.length
+  })).sort((a,b)=>a.w-b.w);
+  const suffix=currentLanguage==='en'?` (${members.length}-measurement mean)`:`（${members.length}筆平均）`;
+  processed.push({
+   ...members[0],
+   name:`${base}${suffix}`,
+   baseName:base,
+   key:`average::${base}`,
+   data,
+   replicates:members.length
+  });
+ });
+ return processed;
+}
+
 // =====================================================
 // 區塊二：Excel / CSV 讀取與工作表解析
 // =====================================================
+// parseSheet：讀取使用者選中的單一工作表，找出標題列、波長欄及全部數據列。
 function parseSheet(name){const data=sheetToRows(workbook.Sheets[name]);if(!data.length)throw Error('工作表沒有資料');const head=data.findIndex(r=>r&&r.filter(v=>v!==null&&v!=='').length>=2);if(head<0)throw Error('找不到欄位標題');const rawHeaders=data[head],max=Math.max(...data.slice(head,head+5).map(r=>r.length));headers=Array.from({length:max},(_,i)=>String(rawHeaders[i]??(currentLanguage==='en'?`Column ${i+1}`:`欄位${i+1}`)).trim()||(currentLanguage==='en'?`Column ${i+1}`:`欄位${i+1}`));rows=data.slice(head+1).filter(r=>r&&r.some(v=>v!==null&&v!==''));let opts=headers.map((h,i)=>`<option value="${i}">${escapeHtml(h)}${currentLanguage==='en'?` (column ${i+1})`:`（第${i+1}欄）`}</option>`).join('');$('wave').innerHTML=opts;$('wave').disabled=false;let likely=headers.findIndex(h=>/波長|wavelength|^nm$/i.test(h));if(likely<0){likely=headers.findIndex((h,i)=>{const a=rows.slice(0,100).map(r=>num(r[i])).filter(Number.isFinite);return a.length>10&&a.filter(v=>v>=200&&v<=1100).length/a.length>.85&&a.slice(1).filter((v,j)=>v>a[j]).length/a.length>.8})}widx=likely>=0?likely:0;$('wave').value=String(widx);if($('compareMode').value==='single')analyze()}
+// escapeHtml：將檔案或工作表名稱中的特殊字元轉成安全字串，避免HTML被注入。
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-// CSV 解析：支援逗號分隔、雙引號欄位及 Windows 換行。
+// parseCsv：將CSV文字逐字元轉成二維陣列，支援逗號、雙引號欄位及Windows換行。
 function parseCsv(text){
  const rows=[];
  let row=[],cell='',quoted=false;
@@ -236,7 +299,8 @@ function sheetToRows(sheet){
 // =====================================================
 // 區塊三：單一工作表分析與跨工作表分析
 // =====================================================
-// 單一工作表：依指定波段篩選數據並建立光譜曲線。
+// analyze：單一工作表模式。
+// 將所有數值欄配對到左側最近的波長欄，篩選波段，再建立 series 曲線資料。
 function analyze(){
  if($('compareMode').value==='cross'){analyzeCross();return}
  let from=num($('from').value),to=num($('to').value);
@@ -253,15 +317,17 @@ function analyze(){
   const data=rows.map(r=>({w:num(r[axis]),y:num(r[i])})).filter(p=>Number.isFinite(p.w)&&Number.isFinite(p.y)&&p.w>=from&&p.w<=to).sort((a,b)=>a.w-b.w);
   if(!data.length)continue;
   const base=headers[i];counts[base]=(counts[base]||0)+1;
-  series.push({name:sampleLabel(base,counts[base]),i,data});
+  series.push({name:sampleLabel(base,counts[base]),baseName:replicateBaseName(base),i,data});
  }
+ series=applyReplicateAveraging(series);
  selected=new Set(series.map((v,i)=>oldNames.size?(oldNames.has(v.name)?i:-1):(i<Math.min(3,series.length)?i:-1)).filter(i=>i>=0));
  if(!selected.size&&series.length)selected.add(0);
  const waveCount=new Set(series.flatMap(s=>s.data.map(p=>p.w))).size;
  $('status').innerHTML=series.length?(currentLanguage==='en'?`<span class="ok">✓ Identified ${waveCols.length} wavelength column(s), ${series.length} spectral sample(s), and ${waveCount} distinct wavelength positions; analysis range ${fmt(from)}–${fmt(to)} nm.</span>`:`<span class="ok">✓ 已辨識 ${waveCols.length} 組波長欄、${series.length} 個光譜樣本；${waveCount} 個不同波長位置，分析範圍 ${fmt(from)}–${fmt(to)} nm。</span>`):(currentLanguage==='en'?'<span class="warning">No usable samples were found in the selected band. Check the worksheet or wavelength column.</span>':'<span class="warning">指定波段內沒有可用樣本，請檢查工作表或波長欄。</span>');
  $('all').disabled=!series.length;$('export').disabled=!series.length;$('exportRaw').disabled=!series.length;render()
 }
-// 讀取指定工作表中所有樣本；一個樣本會對應左側最近的波長欄。
+// readSheetSeries：跨工作表模式。
+// 讀取指定工作表中的所有樣本；每個樣本只配對左側最近的波長欄。
 function readSheetSeries(name){
  if(crossCache.has(name))return crossCache.get(name);
  const sh=workbook?.Sheets[name];if(!sh)return {error:'工作表不存在',items:[]};
@@ -278,9 +344,11 @@ function readSheetSeries(name){
  hs.forEach((h,i)=>{if(axes.includes(i))return;const axis=axes.filter(j=>j<i).at(-1);if(axis===undefined)return;
  const data=rs.map(r=>({w:num(r[axis]),y:num(r[i])})).filter(p=>Number.isFinite(p.w)&&Number.isFinite(p.y)).sort((a,b)=>a.w-b.w);
  if(!data.length)return;counts[h]=(counts[h]||0)+1;
- items.push({key:name+'::'+i,name:sampleLabel(h,counts[h]),sheet:name,column:i,axis:hs[axis],data});
+ items.push({key:name+'::'+i,name:sampleLabel(h,counts[h]),baseName:replicateBaseName(h),sheet:name,column:i,axis:hs[axis],data});
  });const out={items,axes:axes.length,error:items.length?'':'找不到有效光譜數據'};crossCache.set(name,out);return out;
 }
+// populateCross：依目前匯入的工作表建立跨工作表勾選介面。
+// 已勾選狀態會保留，工作表名稱則會出現在最終曲線名稱中。
 function populateCross(){
  if(!workbook)return;
  const previousSheets=new Map([...document.querySelectorAll('.cross-sheet')].map(el=>[el.dataset.sheet,el.checked]));
@@ -297,6 +365,7 @@ function populateCross(){
  $('selectRecommended').disabled=!hasPreferred;
  $('crossStatus').textContent=currentLanguage==='en'?(hasPreferred?'Available quality-average worksheets are preselected. Review the samples, then update the chart.':'No recommended quality-average worksheets found. Select worksheets manually.'):(hasPreferred?'已預選存在的品質平均工作表；請檢查各表樣本欄位，再點「更新疊加圖表」。':'沒有找到三種品質平均工作表，可手動勾選其他工作表。');
 }
+// analyzeCross：合併使用者勾選的跨工作表樣本，依波段篩選後交給 render() 顯示。
 function analyzeCross(){
  if(!workbook){$('status').textContent=tStatic('請先匯入 Excel 檔案');return}
  const from=num($('from').value),to=num($('to').value);
@@ -305,7 +374,8 @@ function analyzeCross(){
  const chosen=[...document.querySelectorAll('.cross-sheet:checked')].map(el=>el.dataset.sheet);
  const wanted=new Set([...document.querySelectorAll('.cross-sample:checked')].filter(el=>chosen.includes(el.dataset.sheet)).map(el=>el.dataset.sheet+'::'+el.dataset.col));
  const oldNames=new Set([...selected].map(i=>series[i]?.key));
- series=chosen.flatMap(name=>readSheetSeries(name).items.filter(item=>wanted.has(item.key)).map(item=>({...item,name:`${name}／${item.name}`,data:item.data.filter(p=>p.w>=from&&p.w<=to)})).filter(item=>item.data.length));
+ series=chosen.flatMap(name=>readSheetSeries(name).items.filter(item=>wanted.has(item.key)).map(item=>({...item,name:`${name}／${item.name}`,baseName:`${name}／${item.baseName}`,data:item.data.filter(p=>p.w>=from&&p.w<=to)})).filter(item=>item.data.length));
+ series=applyReplicateAveraging(series);
  selected=new Set(series.map((s,i)=>oldNames.size?(oldNames.has(s.key)?i:-1):i).filter(i=>i>=0));
  if(!selected.size)selected=new Set(series.map((_,i)=>i));
  const totalWave=new Set(series.flatMap(s=>s.data.map(p=>p.w))).size;
@@ -320,11 +390,16 @@ $('crossAll').onclick=()=>{document.querySelectorAll('.cross-sheet:not(:disabled
 $('crossSheets').addEventListener('change',e=>{if(e.target.matches('.cross-sheet')){const name=e.target.dataset.sheet;document.querySelectorAll('.cross-sample').forEach(el=>{if(el.dataset.sheet===name){if(!e.target.checked)el.checked=false;else if(![...document.querySelectorAll('.cross-sample')].some(x=>x.dataset.sheet===name&&x.checked))el.checked=true}})}else if(e.target.matches('.cross-sample')&&e.target.checked){document.querySelectorAll('.cross-sheet').forEach(el=>{if(el.dataset.sheet===e.target.dataset.sheet)el.checked=true})}analyzeCross()});
 // 快速套用指定波段；若已有資料，立即重新分析並更新匯出內容。
 $('presetBand').onclick=()=>{$('from').value='620';$('to').value='680';if(workbook)analyze()};
+$('replicateMode').addEventListener('change',()=>{
+ if(workbook)analyze();
+ else if(demoDataLoaded)analyze();
+});
 // =====================================================
 // 區塊四：特徵計算、表格、樣本選擇與圖表繪製
 // =====================================================
-// 特徵計算：從單一樣本在指定波段內找出波峰與統計值。
+// feature：從單一樣本在指定波段內找出波峰、平均、最低與有效點數。
 function feature(s){const a=s.data;if(!a.length)return null;let peak=a.reduce((p,c)=>c.y>p.y?c:p,a[0]);return {name:s.name,w:peak.w,max:peak.y,mean:a.reduce((v,p)=>v+p.y,0)/a.length,min:Math.min(...a.map(p=>p.y)),n:a.length}}
+// render：統一更新摘要卡、特徵表、原始數據表、圖例、樣本清單與Canvas。
 function render(){const first=[...selected][0],f=first===undefined?null:feature(series[first]);$('peakW').textContent=f?fmt(f.w,3):'—';$('peakI').textContent=f?fmt(f.max):'—';$('mean').textContent=f?fmt(f.mean):'—';$('points').textContent=f?f.n:'—';const onlyLabel=currentLanguage==='en'?'Only':'單獨';$('samples').innerHTML=series.length?series.map((s,i)=>`<label class="sample"><input type="checkbox" data-i="${i}" ${selected.has(i)?'checked':''}><span>${escapeHtml(s.name)}</span><button class="mini" data-only="${i}" type="button">${onlyLabel}</button></label>`).join(''):(currentLanguage==='en'?'<div class="empty">No drawable samples</div>':'<div class="empty">沒有可繪製的樣本</div>');$('legend').innerHTML=[...selected].map(i=>`<label><i style="background:${palette[i%palette.length]}"></i>${escapeHtml(series[i].name)}</label>`).join('');$('tbody').innerHTML=series.length?series.map(s=>{const f=feature(s);return f?`<tr><td>${escapeHtml(f.name)}</td><td>${fmt(f.w,3)}</td><td>${fmt(f.max)}</td><td>${fmt(f.mean)}</td><td>${fmt(f.min)}</td><td>${f.n}</td></tr>`:''}).join(''):(currentLanguage==='en'?'<tr><td colspan="6">No data</td></tr>':'<tr><td colspan="6">沒有資料</td></tr>');renderRawData();draw()}
 // 將目前波段內所有樣本整理成逐波長表格，最多每頁顯示100筆。
 function renderRawData(){
@@ -348,11 +423,20 @@ function renderRawData(){
 $('rawPrev').onclick=()=>{if(rawPage>0){rawPage--;renderRawData()}};
 $('rawNext').onclick=()=>{rawPage++;renderRawData()};
 $('samples').addEventListener('change',e=>{if(e.target.matches('input[data-i]')){let i=Number(e.target.dataset.i);e.target.checked?selected.add(i):selected.delete(i);render()}});$('samples').addEventListener('click',e=>{if(e.target.dataset.only!==undefined){selected=new Set([Number(e.target.dataset.only)]);render()}});$('all').onclick=()=>{selected=selected.size===series.length?new Set():new Set(series.map((_,i)=>i));render()};
-// 圖表繪製：Canvas座標軸、刻度、曲線與滑鼠提示。
+// draw：Canvas繪圖入口，負責座標軸、刻度、曲線平滑、Y軸縮放與游標提示。
 function draw(){const c=$('chart'),r=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1;c.width=Math.max(300,Math.round(r.width*dpr));c.height=Math.max(220,Math.round(r.height*dpr));const ctx=c.getContext('2d');ctx.scale(dpr,dpr);const W=c.width/dpr,H=c.height/dpr;ctx.clearRect(0,0,W,H);const L=62,R=18,T=20,B=44,pw=W-L-R,ph=H-T-B;ctx.font='12px sans-serif';ctx.textBaseline='middle';const vis=[...selected].map(i=>({s:series[i],i})).filter(o=>o.s&&o.s.data.length);if(!vis.length){ctx.fillStyle='#91a5bc';ctx.textAlign='center';ctx.fillText(currentLanguage==='en'?'Check at least one sample':'請勾選至少一個樣本',W/2,H/2);return}const x0=Number($('from').value),x1=Number($('to').value);let vals=vis.flatMap(o=>o.s.data.map(p=>p.y));const dataMin=Math.min(...vals),dataMax=Math.max(...vals);let y0=Math.min(0,dataMin),y1=Math.max(0,dataMax);if(y0===y1)y1=y0+1;let pad=(y1-y0)*.07;y0-=pad;y1+=pad;if(dataMin>=0)y0=0;else if(dataMax<=0)y1=0;if($('ymode').value==='manual'){const low=num($('ymin').value),high=num($('ymax').value);if(Number.isFinite(low)&&Number.isFinite(high)&&low<high){y0=low;y1=high;$('yerror').style.display='none'}else{$('yerror').textContent=currentLanguage==='en'?'Y-axis minimum must be less than maximum, and both values must be numbers. Auto scale is shown for now.':'Y軸最小值必須小於最大值，且兩者皆需填寫數字；目前暫以自動刻度顯示。';$('yerror').style.display='block'}}else{$('yerror').style.display='none'}const X=v=>L+(v-x0)/(x1-x0)*pw,Y=v=>T+(y1-v)/(y1-y0)*ph;ctx.lineWidth=1;ctx.strokeStyle='#314255';ctx.fillStyle='#9eb1c8';ctx.textAlign='right';for(let i=0;i<=5;i++){let y=T+ph*i/5;ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(W-R,y);ctx.stroke();ctx.fillText(fmt(y1-(y1-y0)*i/5,0),L-10,y)}ctx.textAlign='center';const requestedStep=num($('xstep').value);const step=Number.isFinite(requestedStep)&&requestedStep>0?requestedStep:(x1-x0)/6;const tickCount=Math.floor((x1-x0)/step)+1;if(tickCount>150){$('status').textContent=currentLanguage==='en'?'X-axis ticks are too dense; increase the tick spacing.':'X軸刻度過密，請調大刻度間距';}const safeStep=tickCount>150?(x1-x0)/6:step;let ticks=[];const start=Math.ceil((x0-1e-9)/safeStep)*safeStep;for(let v=start,n=0;v<=x1+1e-8&&n<151;v+=safeStep,n++)ticks.push(Number(v.toFixed(9)));if(!ticks.length)ticks=[x0,x1];const labelStride=Math.max(1,Math.ceil(ticks.length/Math.max(2,Math.floor(pw/62))));ticks.forEach((v,i)=>{let x=X(v);ctx.beginPath();ctx.moveTo(x,T);ctx.lineTo(x,T+ph);ctx.stroke();if(i%labelStride===0)ctx.fillText(fmt(v,2),x,H-23)});vis.forEach(({s,i})=>{ctx.beginPath();ctx.strokeStyle=palette[i%palette.length];ctx.lineWidth=2.4;const n=Number($('smooth').value);const pts=s.data.map((p,j)=>{if(n===1)return p;let half=Math.floor(n/2),part=s.data.slice(Math.max(0,j-half),Math.min(s.data.length,j+half+1));return {w:p.w,y:part.reduce((a,b)=>a+b.y,0)/part.length}});pts.forEach((p,j)=>j?ctx.lineTo(X(p.w),Y(p.y)):ctx.moveTo(X(p.w),Y(p.y)));ctx.stroke()});if(hover!==null&&hover>=L&&hover<=W-R){let wave=x0+(hover-L)/pw*(x1-x0);ctx.strokeStyle='#b9c9dc';ctx.setLineDash([4,5]);ctx.beginPath();ctx.moveTo(hover,T);ctx.lineTo(hover,T+ph);ctx.stroke();ctx.setLineDash([]);let text=vis.slice(0,4).map(({s})=>{let p=s.data.reduce((a,b)=>Math.abs(b.w-wave)<Math.abs(a.w-wave)?b:a);return `${s.name}: ${fmt(p.y)} @ ${fmt(p.w,2)} nm`});let boxW=Math.min(W-20,Math.max(155,...text.map(s=>ctx.measureText(s).width+18)));let bx=Math.min(Math.max(hover+10,8),W-boxW-8),by=T+10;ctx.fillStyle='#24364a';ctx.fillRect(bx,by,boxW,22+text.length*18);ctx.fillStyle='#fff';ctx.textAlign='left';ctx.fillText(`${currentLanguage==='en'?'Cursor':'游標位置'} ${fmt(wave,2)} nm`,bx+9,by+13);text.forEach((s,i)=>ctx.fillText(s,bx+9,by+32+i*18))}}
 $('smooth').addEventListener('change',draw);$('ymode').addEventListener('change',()=>{const manual=$('ymode').value==='manual';$('ymin').disabled=!manual;$('ymax').disabled=!manual;if(manual){const vals=[...selected].flatMap(i=>(series[i]?.data||[]).map(p=>p.y));if(vals.length){const lo=Math.min(0,...vals),hi=Math.max(...vals),pad=Math.max(1,(hi-lo)*.07);if(!$('ymin').value)$('ymin').value=String(Math.floor(lo-pad));if(!$('ymax').value)$('ymax').value=String(Math.ceil(hi+pad))}}draw()});['ymin','ymax'].forEach(id=>$(id).addEventListener('input',draw));$('yreset').addEventListener('click',()=>{$('ymode').value='auto';$('ymin').value='';$('ymax').value='';$('ymin').disabled=true;$('ymax').disabled=true;draw()});$('chart').addEventListener('mousemove',e=>{hover=e.clientX-$('chart').getBoundingClientRect().left;draw()});$('chart').addEventListener('mouseleave',()=>{hover=null;draw()});window.addEventListener('resize',draw);
+// =====================================================
 // 區塊五：檔案匯入、拖曳與示範資料
+// =====================================================
+// drag / file：負責接收使用者選擇或拖曳進來的 CSV 或 Excel 檔案。
 $('drop').onclick=e=>{if(e.target!==$('file'))$('file').click()};$('drop').ondragover=e=>{e.preventDefault();$('drop').style.borderColor='#4ce2b6'};$('drop').ondragleave=()=>$('drop').style.borderColor='';$('drop').ondrop=e=>{e.preventDefault();$('drop').style.borderColor='';if(e.dataTransfer.files.length)load(e.dataTransfer.files[0])};$('file').onchange=e=>{if(e.target.files[0])load(e.target.files[0])};
+$('drop').addEventListener('keydown',e=>{
+ if(e.key==='Enter'||e.key===' '){
+  e.preventDefault();
+  $('file').click();
+ }
+});
 // load()：讀取CSV或Excel；Excel解析使用SheetJS。
 async function load(file){try{
  demoDataLoaded=false;csvImported=false;
@@ -374,6 +458,9 @@ async function load(file){try{
  if($('compareMode').value==='cross')analyzeCross();else parseSheet(preferred);
  $('status').innerHTML+=`<span class="sub">　檔案：${escapeHtml(file.name)}</span>`;
 }catch(e){$('status').innerHTML=`<span class="warning">無法匯入：${escapeHtml(e.message)}</span>`}}$('sheet').onchange=()=>{try{parseSheet($('sheet').value)}catch(e){$('status').innerHTML='<span class="warning">工作表讀取失敗：'+escapeHtml(e.message)+'</span>'}};$('wave').onchange=analyze;$('apply').onclick=analyze;$('xstep').addEventListener('change',draw);
-$('demo').onclick=()=>{demoDataLoaded=true;headers=currentLanguage==='en'?['Wavelength','Fresh Pepper 1','Fresh Pepper 2','Pest-Damaged Pepper 1','Rotten Pepper 1']:['波長','新鮮辣椒1','新鮮辣椒2','蟲害辣椒1','腐爛辣椒1'];rows=Array.from({length:61},(_,i)=>{const w=600+i;return [w,420+3650*Math.exp(-.5*((w-630)/8.8)**2),380+3380*Math.exp(-.5*((w-632)/9.5)**2),460+2580*Math.exp(-.5*((w-626)/10)**2),540+1600*Math.exp(-.5*((w-635)/11)**2)]});$('sheet').innerHTML=`<option>${currentLanguage==='en'?'Demo Data (simulated)':'內建示範（非實測）'}</option>`;$('sheet').disabled=true;$('wave').innerHTML=headers.map((s,i)=>`<option value="${i}">${s}</option>`).join('');$('wave').disabled=false;$('wave').value='0';$('apply').disabled=false;analyze();$('status').innerHTML+=`<span class="warning">${currentLanguage==='en'?'　Simulated data, not experimental measurements.':'　目前為模擬曲線，並非你的實驗數據。'}</span>`};
-// 區塊六：CSV匯出；特徵與選定波段分開匯出。
+$('demo').onclick=()=>{demoDataLoaded=true;headers=currentLanguage==='en'?['Wavelength','Fresh Pepper 1','Fresh Pepper 2','Fresh Pepper 3','Pest-Damaged Pepper 1','Rotten Pepper 1']:['波長','新鮮辣椒1','新鮮辣椒2','新鮮辣椒3','蟲害辣椒1','腐爛辣椒1'];rows=Array.from({length:61},(_,i)=>{const w=600+i;return [w,420+3650*Math.exp(-.5*((w-630)/8.8)**2),380+3380*Math.exp(-.5*((w-632)/9.5)**2),460+3500*Math.exp(-.5*((w-629)/9.2)**2),460+2580*Math.exp(-.5*((w-626)/10)**2),540+1600*Math.exp(-.5*((w-635)/11)**2)]});$('sheet').innerHTML=`<option>${currentLanguage==='en'?'Demo Data (simulated)':'內建示範（非實測）'}</option>`;$('sheet').disabled=true;$('wave').innerHTML=headers.map((s,i)=>`<option value="${i}">${s}</option>`).join('');$('wave').disabled=false;$('wave').value='0';$('apply').disabled=false;analyze();$('status').innerHTML+=`<span class="warning">${currentLanguage==='en'?'　Simulated data, not experimental measurements.':'　目前為模擬曲線，並非你的實驗數據。'}</span>`};
+// =====================================================
+// 區塊六：CSV匯出
+// =====================================================
+// export：特徵與原始數據分開匯出，避免把統計值與逐波長原始值混在同一份檔案。
 function csvEscape(v){let s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}function downloadCsv(name,data){const text='\ufeff'+data.map(row=>row.map(csvEscape).join(',')).join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}$('export').onclick=()=>{const headers=currentLanguage==='en'?['Sample Name','Peak Wavelength(nm)','Peak Intensity','Mean Intensity','Minimum Intensity','Measurement Points']:['樣本名稱','波峰波長(nm)','波峰強度','平均強度','最低強度','量測點數'];downloadCsv(currentLanguage==='en'?'ChiliScan_Spectral_Features.csv':'ChiliScan_光譜特徵.csv',[headers,...series.map(s=>{const f=feature(s);return [f.name,f.w,f.max,f.mean,f.min,f.n]})])};$('exportRaw').onclick=()=>{const picked=[...selected].map(i=>series[i]).filter(Boolean);if(!picked.length){alert(currentLanguage==='en'?'Please select at least one sample':'請先勾選樣本');return}let wavelengths=[...new Set(picked.flatMap(s=>s.data.map(p=>p.w)))].sort((a,b)=>a-b);downloadCsv(currentLanguage==='en'?'ChiliScan_Selected_Band.csv':'ChiliScan_選定波段.csv',[[(currentLanguage==='en'?'Wavelength(nm)':'波長(nm)'),...picked.map(s=>s.name)],...wavelengths.map(w=>[w,...picked.map(s=>s.data.find(p=>p.w===w)?.y??'')])])};applyLanguage(currentLanguage);draw();
