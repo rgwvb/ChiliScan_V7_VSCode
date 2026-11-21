@@ -39,7 +39,7 @@
 
       <section class="panel">
         <h2>02　上傳待測資料</h2>
-        <p class="note">每個樣本請使用一欄已平均的光譜。原始光強資料需在同一工作表含「標準白」欄；系統會先計算吸光度 A = −log10(樣本平均光強／標準白光強度)。</p>
+        <p class="note">每個工作表需有「波長 (nm)」欄；只比對 620–680 nm。樣本可用一欄已平均光譜，或在樣本名稱下放多組「波長／光強」重複量測欄，系統會先依波長平均光強。原始光強資料還需在同一工作表含「標準白」欄，再換算吸光度 A = −log10(樣本平均光強／標準白光強度)。只有數值、沒有波長欄的矩陣無法比對。</p>
         <label class="upload classifier-upload" for="queryFile">
           <strong>選擇待測 Excel／CSV</strong>
           <span class="sub" id="queryFilename">可包含一個或多個待測樣本</span>

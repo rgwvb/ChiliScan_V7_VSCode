@@ -50,6 +50,26 @@
     );
   }
 
+  function findWavelengthSeriesColumns(sheet, headerRowIndex, wavelengthIndex, columnCount, rowCount) {
+    const matches = new Set([wavelengthIndex]);
+    for (let columnIndex = 0; columnIndex < columnCount; columnIndex++) {
+      if (columnIndex === wavelengthIndex) continue;
+      let eligible = 0;
+      let matching = 0;
+      for (let rowIndex = headerRowIndex + 1; rowIndex < rowCount; rowIndex++) {
+        const wavelength = cellValue(sheet, rowIndex, wavelengthIndex);
+        if (wavelength === null || wavelength < BAND_MIN || wavelength > BAND_MAX) continue;
+        eligible++;
+        const candidate = cellValue(sheet, rowIndex, columnIndex);
+        if (candidate !== null && Math.abs(candidate - wavelength) <= 0.01) matching++;
+      }
+      if (eligible >= MIN_SHARED_WAVELENGTHS && matching / eligible >= 0.9) {
+        matches.add(columnIndex);
+      }
+    }
+    return matches;
+  }
+
   function classifySheetName(name) {
     if (/新鮮|fresh/i.test(name)) return 'fresh';
     if (/腐爛|腐敗|rotten/i.test(name)) return 'rotten';
@@ -77,7 +97,14 @@
       throw new Error(`${sheetName}：參考檔應是已換算的吸光度資料，不要再含標準白光強欄。`);
     }
 
-    const sampleColumns = headers
+    const wavelengthSeriesColumns = findWavelengthSeriesColumns(
+      sheet,
+      headerRowIndex,
+      wavelengthIndex,
+      headers.length,
+      rows.length
+    );
+    const sampleHeaders = headers
       .map((header, index) => ({ header, index }))
       .filter(({ header, index }) =>
         header &&
@@ -85,7 +112,20 @@
         index !== whiteIndex &&
         !isMetadataHeader(header)
       );
-    if (!sampleColumns.length) throw new Error(`${sheetName}：沒有可用的樣本欄。`);
+    if (!sampleHeaders.length) throw new Error(`${sheetName}：沒有可用的樣本欄。`);
+    const sampleColumns = sampleHeaders.map((column, sampleIndex) => {
+      const groupEnd = sampleHeaders[sampleIndex + 1]?.index ?? headers.length;
+      const valueIndexes = [];
+      for (let index = column.index; index < groupEnd; index++) {
+        if (wavelengthSeriesColumns.has(index) && index + 1 < groupEnd) {
+          valueIndexes.push(index + 1);
+        }
+      }
+      return {
+        ...column,
+        valueIndexes: valueIndexes.length ? valueIndexes : [column.index]
+      };
+    });
 
     const samples = [];
     for (const column of sampleColumns) {
@@ -94,8 +134,11 @@
         const wavelength = cellValue(sheet, rowIndex, wavelengthIndex);
         if (wavelength === null || wavelength < BAND_MIN || wavelength > BAND_MAX) continue;
 
-        const value = cellValue(sheet, rowIndex, column.index);
-        if (value === null) continue;
+        const values = column.valueIndexes
+          .map((index) => cellValue(sheet, rowIndex, index))
+          .filter((value) => value !== null);
+        if (!values.length) continue;
+        const value = values.reduce((sum, item) => sum + item, 0) / values.length;
 
         let absorbance = value;
         if (convertIntensity) {
@@ -116,6 +159,7 @@
         });
       }
     }
+    if (!samples.length) throw new Error(`${sheetName}：沒有找到 620–680 nm 的可用樣本數值。`);
     return { samples, converted: convertIntensity };
   }
 
@@ -309,6 +353,7 @@
   async function classifyFile() {
     if (!referenceSet || !queryFile) return;
     $('queryStatus').textContent = '正在本機讀取並比對吸光度資料…';
+    $('queryStatus').dataset.state = '';
     $('classify').disabled = true;
     $('resultsPanel').hidden = true;
     try {
@@ -328,7 +373,12 @@
           throw error;
         }
       }
-      if (!querySamples.length) throw new Error('沒有找到可用的待測樣本欄。');
+      if (!querySamples.length) {
+        const detail = ignoredSheets.length
+          ? `找不到含「波長」欄位的待測工作表（略過：${ignoredSheets.join('、')}）。`
+          : '沒有找到可用的待測樣本欄。';
+        throw new Error(`${detail} 請提供「波長 (nm)」欄及各樣本數值欄；原始光強另需「標準白」欄。`);
+      }
 
       const results = querySamples.map((sample) => {
         const sharedWavelengths = referenceSet.wavelengths.filter((wavelength) => sample.points.has(wavelength));
@@ -411,6 +461,7 @@
     queryFile = event.target.files[0] || null;
     $('queryFilename').textContent = queryFile ? queryFile.name : '可包含一個或多個待測樣本';
     $('queryStatus').textContent = queryFile ? '待測檔案已選擇，可開始比對。' : '請先載入參考資料，再選擇待測檔案。';
+    $('queryStatus').dataset.state = '';
     updateButtons();
   });
 
