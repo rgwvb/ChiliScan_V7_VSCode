@@ -21,7 +21,7 @@
 // 1. 保存使用中的 Excel / CSV、工作表、樣本與選取狀態。
 // 2. 提供中英文切換、數值轉換、HTML跳脈防護與格式化工具。
 // 3. 不直接處理 Excel/CSV讀取或畫圖；這些工作交給後面的區塊。
-const $=id=>document.getElementById(id);let crossSpecs=[],crossCache=new Map();let workbook=null,rows=[],headers=[],widx=-1,series=[],selected=new Set(),hover=null,rawPage=0,demoDataLoaded=false,csvImported=false,replicateSummary={groups:0,measurements:0};const rawPageSize=100;const palette=['#60a5fa','#34d399','#fbbf24','#fb7185','#a78bfa','#22d3ee','#f472b6','#bef264','#f97316','#93c5fd'];
+const $=id=>document.getElementById(id);let crossSpecs=[],crossCache=new Map();let workbook=null,rows=[],headers=[],sourceHeaders=[],widx=-1,series=[],selected=new Set(),hover=null,rawPage=0,demoDataLoaded=false,csvImported=false,replicateSummary={groups:0,measurements:0};const rawPageSize=100;const palette=['#60a5fa','#34d399','#fbbf24','#fb7185','#a78bfa','#22d3ee','#f472b6','#bef264','#f97316','#93c5fd'];
 const staticTranslations={
 'pageTitle':'ChiliScan | Spectral Data Analysis Platform V7',
 'brandSuffix':'/ Spectral Analysis Platform',
@@ -116,7 +116,7 @@ const uiTranslations={
   rangeSettings:['資料與波段','Data & Wavelength Range'],
   autoUpdateHint:['匯入後會自動分析；修改欄位或波段後會自動重新計算。','Analysis starts on import and recalculates when worksheet, wavelength, or range settings change.'],
   replicateSettings:['重複量測處理','Replicate Measurements'],
-  replicateHint:['同一樣本的三筆資料請用相同名稱加 1、2、3；程式會依相同波長逐點平均。','Name repeat measurements with the same sample name plus 1, 2, 3. Values are averaged at matching wavelengths.'],
+  replicateHint:['同一品項的重複量測請使用相同名稱或放在同一組欄位標題下；程式會依相同波長逐點平均。','Use the same sample name or place repeated measurements under one group heading; values are averaged at matching wavelengths.'],
   setBand:['設定 620–680 nm','Set 620–680 nm'],
   reanalyze:['重新分析','Re-analyze'],
   demo:['載入示範資料','Load Demo Data'],
@@ -227,6 +227,67 @@ function replicateBaseName(name){
  return base||String(name||'').trim();
 }
 
+function isWavelengthHeader(header){return /^(波長\s*\d*|wavelength\s*\d*|nm)$/i.test(String(header||'').trim())}
+function isWavelengthColumn(dataRows,index){
+ const values=dataRows.slice(0,150).map(row=>num(row?.[index])).filter(Number.isFinite);
+ if(values.length<8)return false;
+ const inRange=values.filter(value=>value>=200&&value<=1100).length/values.length;
+ const rising=values.slice(1).filter((value,i)=>value>values[i]).length/(values.length-1);
+ return inRange>.8&&rising>.75;
+}
+function pairedWavelengthColumns(rawHeaders,axisCandidates){
+ const runs=[];
+ axisCandidates.forEach(index=>{
+  const previous=runs.at(-1),hasHeader=Boolean(String(rawHeaders[index]||'').trim());
+  if(previous&&index===previous.at(-1)+2&&!hasHeader)previous.push(index);
+  else runs.push([index]);
+ });
+ return runs.filter(run=>{
+  const group=String(rawHeaders[run[0]]||'').trim();
+  return run.length>=3&&group&&!isWavelengthHeader(group)&&run.slice(1).every(index=>!String(rawHeaders[index]||'').trim());
+ }).flat();
+}
+function extractSpectra(rawHeaders,displayHeaders,dataRows,fallbackAxis,from=-Infinity,to=Infinity){
+ const namedAxes=rawHeaders.map((header,index)=>isWavelengthHeader(header)?index:-1).filter(index=>index>=0);
+ const inferredAxes=rawHeaders.map((_,index)=>isWavelengthColumn(dataRows,index)?index:-1).filter(index=>index>=0);
+ const candidates=[...new Set([...namedAxes,...inferredAxes])].sort((a,b)=>a-b);
+ const pairAxes=pairedWavelengthColumns(rawHeaders,candidates);
+ const pairAxisSet=new Set(pairAxes);
+ const normalAxes=pairAxes.length
+  ?namedAxes.filter(index=>!pairAxisSet.has(index))
+  :namedAxes.length?namedAxes:[Number.isInteger(fallbackAxis)?fallbackAxis:inferredAxes[0]].filter(Number.isInteger);
+ const pairedColumns=new Set(pairAxes.flatMap(index=>[index,index+1]));
+ const counts=new Map(),items=[];
+ const makeData=(waveColumn,intensityColumn)=>dataRows.map(row=>({w:num(row?.[waveColumn]),y:num(row?.[intensityColumn])}))
+  .filter(point=>Number.isFinite(point.w)&&Number.isFinite(point.y)&&point.w>=from&&point.w<=to)
+  .sort((a,b)=>a.w-b.w);
+ pairAxes.forEach(axis=>{
+  const column=axis+1;
+  if(column>=displayHeaders.length||pairAxisSet.has(column))return;
+  let group='';
+  for(let i=axis;i>=0;i--){if(String(rawHeaders[i]||'').trim()){group=String(rawHeaders[i]).trim();break}}
+  if(!group)return;
+  const data=makeData(axis,column);
+  if(!data.length)return;
+  const occurrence=(counts.get(group)||0)+1;
+  counts.set(group,occurrence);
+  const name=currentLanguage==='en'?`${group} (measurement ${occurrence})`:`${group}（量測${occurrence}）`;
+  items.push({name,baseName:group,column,axis:group,data});
+ });
+ const ordinaryCounts={};
+ for(let i=0;i<displayHeaders.length;i++){
+  if(pairedColumns.has(i)||normalAxes.includes(i))continue;
+  const axis=normalAxes.filter(index=>index<i).at(-1);
+  if(axis===undefined)continue;
+  const data=makeData(axis,i);
+  if(!data.length)continue;
+  const base=displayHeaders[i];
+  ordinaryCounts[base]=(ordinaryCounts[base]||0)+1;
+  items.push({name:sampleLabel(base,ordinaryCounts[base]),baseName:replicateBaseName(base),column:i,axis:displayHeaders[axis],data});
+ }
+ return {items,axes:[...new Set([...normalAxes,...pairAxes])].length};
+}
+
 // 將同名量測欄合併成逐波長平均。
 // individual：只保留原曲線；average：只保留平均；both：原曲線＋平均。
 function applyReplicateAveraging(rawSeries){
@@ -280,15 +341,30 @@ function replicateStatus(){
    :`已將 ${replicateSummary.groups} 組、共 ${replicateSummary.measurements} 筆重複量測逐波長平均。`;
  }
  return currentLanguage==='en'
-  ?'No replicate columns detected. Use a shared sample name ending in 1, 2, 3.'
-  :'未偵測到重複量測欄；請使用相同樣本名稱並以 1、2、3 結尾。';
+  ?'No replicate columns detected. Check that repeated measurements share a sample name or group heading.'
+  :'未偵測到重複量測欄；請確認重複量測使用相同樣本名稱或同一組欄位標題。';
 }
 
 // =====================================================
 // 區塊二：Excel / CSV 讀取與工作表解析
 // =====================================================
 // parseSheet：讀取使用者選中的單一工作表，找出標題列、波長欄及全部數據列。
-function parseSheet(name){const data=sheetToRows(workbook.Sheets[name]);if(!data.length)throw Error('工作表沒有資料');const head=data.findIndex(r=>r&&r.filter(v=>v!==null&&v!=='').length>=2);if(head<0)throw Error('找不到欄位標題');const rawHeaders=data[head],max=Math.max(...data.slice(head,head+5).map(r=>r.length));headers=Array.from({length:max},(_,i)=>String(rawHeaders[i]??(currentLanguage==='en'?`Column ${i+1}`:`欄位${i+1}`)).trim()||(currentLanguage==='en'?`Column ${i+1}`:`欄位${i+1}`));rows=data.slice(head+1).filter(r=>r&&r.some(v=>v!==null&&v!==''));let opts=headers.map((h,i)=>`<option value="${i}">${escapeHtml(h)}${currentLanguage==='en'?` (column ${i+1})`:`（第${i+1}欄）`}</option>`).join('');$('wave').innerHTML=opts;$('wave').disabled=false;let likely=headers.findIndex(h=>/波長|wavelength|^nm$/i.test(h));if(likely<0){likely=headers.findIndex((h,i)=>{const a=rows.slice(0,100).map(r=>num(r[i])).filter(Number.isFinite);return a.length>10&&a.filter(v=>v>=200&&v<=1100).length/a.length>.85&&a.slice(1).filter((v,j)=>v>a[j]).length/a.length>.8})}widx=likely>=0?likely:0;$('wave').value=String(widx);if($('compareMode').value==='single')analyze()}
+function parseSheet(name){
+ const data=sheetToRows(workbook.Sheets[name]);
+ if(!data.length)throw Error('工作表沒有資料');
+ const head=data.findIndex(r=>r&&r.filter(v=>v!==null&&v!=='').length>=2);
+ if(head<0)throw Error('找不到欄位標題');
+ const rowHeaders=data[head],max=Math.max(...data.slice(head,head+5).map(r=>r.length));
+ sourceHeaders=Array.from({length:max},(_,i)=>String(rowHeaders[i]??'').trim());
+ headers=sourceHeaders.map((header,i)=>header||(currentLanguage==='en'?`Column ${i+1}`:`欄位${i+1}`));
+ rows=data.slice(head+1).filter(r=>r&&r.some(v=>v!==null&&v!==''));
+ const opts=headers.map((h,i)=>`<option value="${i}">${escapeHtml(h)}${currentLanguage==='en'?` (column ${i+1})`:`（第${i+1}欄）`}</option>`).join('');
+ $('wave').innerHTML=opts;$('wave').disabled=false;
+ let likely=headers.findIndex(isWavelengthHeader);
+ if(likely<0)likely=headers.findIndex((_,i)=>isWavelengthColumn(rows,i));
+ widx=likely>=0?likely:0;$('wave').value=String(widx);
+ if($('compareMode').value==='single')analyze();
+}
 // escapeHtml：將檔案或工作表名稱中的特殊字元轉成安全字串，避免HTML被注入。
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 // parseCsv：將CSV文字逐字元轉成二維陣列，支援逗號、雙引號欄位及Windows換行。
@@ -326,25 +402,17 @@ function analyze(){
  if(!Number.isFinite(from)||!Number.isFinite(to)||from>=to){$('status').textContent=tStatic('請輸入有效的波長範圍');return}
  rawPage=0;
  widx=Number($('wave').value);
- const waveCols=headers.map((h,i)=>/^(波長\s*\d*|wavelength\s*\d*|nm)$/i.test(h)?i:-1).filter(i=>i>=0);
- if(!waveCols.length)waveCols.push(widx);
  const previousSelection=[...selected].map(i=>series[i]).filter(Boolean);
  const oldNames=new Set(previousSelection.map(s=>s.name));
  const oldBases=new Set(previousSelection.map(s=>s.baseName));
- const counts={};series=[];
- for(let i=0;i<headers.length;i++){
-  if(waveCols.includes(i))continue;
-  const axis=waveCols.filter(j=>j<i).at(-1)??widx;
-  const data=rows.map(r=>({w:num(r[axis]),y:num(r[i])})).filter(p=>Number.isFinite(p.w)&&Number.isFinite(p.y)&&p.w>=from&&p.w<=to).sort((a,b)=>a.w-b.w);
-  if(!data.length)continue;
-  const base=headers[i];counts[base]=(counts[base]||0)+1;
-  series.push({name:sampleLabel(base,counts[base]),baseName:replicateBaseName(base),i,data});
- }
+ const analysisHeaders=demoDataLoaded?headers:sourceHeaders;
+ const extracted=extractSpectra(analysisHeaders,headers,rows,widx,from,to);
+ series=extracted.items.map(item=>({...item,i:item.column}));
  series=applyReplicateAveraging(series);
  selected=new Set(series.map((v,i)=>oldNames.size?(oldNames.has(v.name)||oldBases.has(v.baseName)?i:-1):(i<Math.min(3,series.length)?i:-1)).filter(i=>i>=0));
  if(!selected.size&&series.length)selected.add(0);
  const waveCount=new Set(series.flatMap(s=>s.data.map(p=>p.w))).size;
- $('status').innerHTML=series.length?(currentLanguage==='en'?`<span class="ok">✓ Identified ${waveCols.length} wavelength column(s), ${series.length} spectral sample(s), and ${waveCount} distinct wavelength positions; analysis range ${fmt(from)}–${fmt(to)} nm.</span>`:`<span class="ok">✓ 已辨識 ${waveCols.length} 組波長欄、${series.length} 個光譜樣本；${waveCount} 個不同波長位置，分析範圍 ${fmt(from)}–${fmt(to)} nm。</span>`):(currentLanguage==='en'?'<span class="warning">No usable samples were found in the selected band. Check the worksheet or wavelength column.</span>':'<span class="warning">指定波段內沒有可用樣本，請檢查工作表或波長欄。</span>');
+ $('status').innerHTML=series.length?(currentLanguage==='en'?`<span class="ok">✓ Identified ${extracted.axes} wavelength column(s), ${series.length} spectral sample(s), and ${waveCount} distinct wavelength positions; analysis range ${fmt(from)}–${fmt(to)} nm.</span>`:`<span class="ok">✓ 已辨識 ${extracted.axes} 組波長欄、${series.length} 個光譜樣本；${waveCount} 個不同波長位置，分析範圍 ${fmt(from)}–${fmt(to)} nm。</span>`):(currentLanguage==='en'?'<span class="warning">No usable samples were found in the selected band. Check the worksheet or wavelength column.</span>':'<span class="warning">指定波段內沒有可用樣本，請檢查工作表或波長欄。</span>');
  if(series.length&&replicateStatus())$('status').innerHTML+=` <span class="replicate-result">${escapeHtml(replicateStatus())}</span>`;
  $('all').disabled=!series.length;$('export').disabled=!series.length;$('exportRaw').disabled=!series.length;render()
 }
@@ -357,17 +425,15 @@ function readSheetSeries(name){
  const head=arr.findIndex(r=>r&&r.filter(v=>v!==null&&v!==''&&v!==undefined).length>=2);
  if(head<0)return {error:'工作表沒有可用的欄位資料',items:[]};
  const max=Math.max(...arr.slice(head,head+5).map(r=>r?.length||0));
- const hs=Array.from({length:max},(_,i)=>String(arr[head][i]??`欄位${i+1}`).trim()||`欄位${i+1}`);
+ const raw=Array.from({length:max},(_,i)=>String(arr[head][i]??'').trim());
+ const hs=raw.map((header,i)=>header||`欄位${i+1}`);
  const rs=arr.slice(head+1).filter(r=>r&&r.some(v=>v!==null&&v!==''));
- let axes=hs.map((h,i)=>/^(波長\s*\d*|wavelength\s*\d*|nm)$/i.test(h)?i:-1).filter(i=>i>=0);
- if(!axes.length){const found=hs.findIndex((h,i)=>{let a=rs.slice(0,150).map(r=>num(r[i])).filter(Number.isFinite);return a.length>=8&&a.filter(v=>v>=200&&v<=1100).length/a.length>.8&&a.slice(1).filter((v,j)=>v>a[j]).length/a.length>.75});if(found>=0)axes=[found]}
- if(!axes.length)return {error:'找不到波長欄',items:[]};
- let counts={},items=[];
- hs.forEach((h,i)=>{if(axes.includes(i))return;const axis=axes.filter(j=>j<i).at(-1);if(axis===undefined)return;
- const data=rs.map(r=>({w:num(r[axis]),y:num(r[i])})).filter(p=>Number.isFinite(p.w)&&Number.isFinite(p.y)).sort((a,b)=>a.w-b.w);
- if(!data.length)return;counts[h]=(counts[h]||0)+1;
- items.push({key:name+'::'+i,name:sampleLabel(h,counts[h]),baseName:replicateBaseName(h),sheet:name,column:i,axis:hs[axis],data});
- });const out={items,axes:axes.length,error:items.length?'':'找不到有效光譜數據'};crossCache.set(name,out);return out;
+ const firstAxis=raw.findIndex((header,index)=>isWavelengthHeader(header)||isWavelengthColumn(rs,index));
+ const extracted=extractSpectra(raw,hs,rs,firstAxis>=0?firstAxis:undefined);
+ const items=extracted.items.map(item=>({...item,key:name+'::'+item.column,sheet:name}));
+ const out={items,axes:extracted.axes,error:items.length?'':'找不到有效光譜數據'};
+ crossCache.set(name,out);
+ return out;
 }
 // populateCross：依目前匯入的工作表建立跨工作表勾選介面。
 // 已勾選狀態會保留，工作表名稱則會出現在最終曲線名稱中。
@@ -379,7 +445,7 @@ function populateCross(){
  const hasPreferred=preferred.some(x=>workbook.SheetNames.includes(x));
  const html=workbook.SheetNames.map(name=>{
   const parsed=readSheetSeries(name),isDefault=hasPreferred?preferred.includes(name):name===$('sheet').value;
-  const options=parsed.items.map((item,i)=>{const key=name+'::'+item.column,checked=previousSamples.has(key)?previousSamples.get(key):isDefault&&i===0;return `<label><input type="checkbox" class="cross-sample" data-sheet="${escapeHtml(name)}" data-col="${item.column}" ${checked?'checked':''}>${escapeHtml(item.name)} <span class="muted">· ${escapeHtml(item.axis)}</span></label>`}).join('');
+  const options=parsed.items.map((item,i)=>{const key=name+'::'+item.column,checked=previousSamples.has(key)?previousSamples.get(key):isDefault&&i===0,axisHint=item.axis===item.baseName?'':` <span class="muted">· ${escapeHtml(item.axis)}</span>`;return `<label><input type="checkbox" class="cross-sample" data-sheet="${escapeHtml(name)}" data-col="${item.column}" ${checked?'checked':''}>${escapeHtml(item.name)}${axisHint}</label>`}).join('');
   const sheetChecked=previousSheets.has(name)?previousSheets.get(name):isDefault&&parsed.items.length>0;
   const countText=currentLanguage==='en'?`${parsed.items.length} sample(s) · ${parsed.axes} wavelength column(s)`:`${parsed.items.length} 個樣本 · ${parsed.axes} 組波長欄`;
   return `<div class="cross-card"><h3><label><input class="cross-sheet" type="checkbox" data-sheet="${escapeHtml(name)}" ${sheetChecked?'checked':''} ${!parsed.items.length?'disabled':''}>${escapeHtml(name)}</label></h3>${parsed.items.length?`<div class="muted">${countText}</div><div class="cross-samples">${options}</div>`:`<div class="warning">${escapeHtml(currentLanguage==='en'?(parsed.error==='找不到波長欄'?'Wavelength column not found':parsed.error):parsed.error)}</div>`}</div>`;
