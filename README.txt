@@ -103,6 +103,16 @@ NVIDIA Kumo AI 連線
 
 GitHub Pages 只託管靜態網站，不會執行 `jetson/jetson_api.py`。網站上的 Kumo 分類功能要等你另外部署並設定安全 HTTPS 後端後才能使用。
 
+Render 後端部署
+---------------
+根目錄的 `render.yaml` 已準備好 Render Blueprint，使用免費方案、新加坡區域、HTTPS，並由 Render 指派的 `PORT` 啟動 API。
+
+1. 登入 Render，選擇建立 Blueprint，連結 `rgwvb/ChiliScan_V7_VSCode` 儲存庫並套用 `render.yaml`。
+2. 在 Render 的秘密環境變數設定 `NVIDIA_API_KEY`（已輪替的新金鑰）及 `CHILISCAN_TOKEN`（自訂的隨機長權杖）。這兩個值只輸入 Render 控制台，不要放進 YAML、GitHub 或對話。其餘 API 網址與網站來源已在 Blueprint 設定。
+3. 部署成功後複製 Render 提供的 `https://....onrender.com` 網址；在 ChiliScan 的 Kumo 區塊輸入該 API 網址，並輸入同一個 `CHILISCAN_TOKEN`，再測試連線。
+
+Render 帳號登入、設定秘密值及第一次建立服務需要由帳號持有人在 Render 控制台完成；本機 GitHub Pages 部署不會自動建立 Render 服務。免費服務閒置後可能需要等待喚醒。按下分類時，光譜會經過 Render 後端送往 NVIDIA。
+
 健康檢查 `GET /api/v1/health` 與分類 `POST /api/v1/predict` 都需要 `Authorization: Bearer <CHILISCAN_TOKEN>`。分類請求使用 `api_version: 1`、`context_spectra` 與 `spectra`：每筆光譜包含 `sample_name`、`wavelengths_nm`、`intensities`、`replicate_count`；context 另需 `label`（`fresh`、`pest` 或 `rotten`）。回應包含 `api_version: 1` 和 `predictions` 陣列，每筆結果包含 `sample_name`、`label` 與 0 到 1 之間的 `confidence`。
 
 目前可用的實驗樣本不足以證明三分類效能。重複量測不是新的獨立樣本；請增加各品質類別的獨立樣本並進行獨立驗證，不要將試用分類結果視為已驗證診斷。

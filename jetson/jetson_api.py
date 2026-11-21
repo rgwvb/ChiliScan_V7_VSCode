@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 
 
 HOST = os.environ.get("CHILISCAN_HOST", "127.0.0.1")
-PORT = int(os.environ.get("CHILISCAN_PORT", "8765"))
+PORT = int(os.environ.get("CHILISCAN_PORT", os.environ.get("PORT", "8765")))
 TOKEN = os.environ.get("CHILISCAN_TOKEN", "")
 ALLOWED_ORIGIN = os.environ.get("CHILISCAN_ORIGIN", "https://rgwvb.github.io")
 NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
