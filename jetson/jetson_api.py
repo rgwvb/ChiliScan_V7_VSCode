@@ -5,6 +5,8 @@ import hmac
 import json
 import math
 import os
+import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
@@ -13,9 +15,13 @@ HOST = os.environ.get("CHILISCAN_HOST", "127.0.0.1")
 PORT = int(os.environ.get("CHILISCAN_PORT", "8765"))
 TOKEN = os.environ.get("CHILISCAN_TOKEN", "")
 ALLOWED_ORIGIN = os.environ.get("CHILISCAN_ORIGIN", "https://rgwvb.github.io")
+NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
+NVIDIA_KUMO_PREDICT_URL = os.environ.get("NVIDIA_KUMO_PREDICT_URL", "")
 MAX_BODY_BYTES = 2_000_000
 MAX_SPECTRA = 100
 MAX_POINTS_PER_SPECTRUM = 20_000
+MAX_KUMO_FEATURE_COLUMNS = 498
+LABELS = frozenset({"fresh", "pest", "rotten"})
 
 
 class RequestError(Exception):
@@ -24,11 +30,7 @@ class RequestError(Exception):
         self.status = status
 
 
-def validate_request(payload):
-    if not isinstance(payload, dict) or payload.get("api_version") != 1:
-        raise RequestError(400, "Expected api_version 1.")
-
-    spectra = payload.get("spectra")
+def validate_spectra(spectra, *, labelled):
     if not isinstance(spectra, list) or not spectra or len(spectra) > MAX_SPECTRA:
         raise RequestError(400, f"spectra must contain 1 to {MAX_SPECTRA} samples.")
 
@@ -56,6 +58,159 @@ def validate_request(payload):
                 finite = False
             if not finite:
                 raise RequestError(400, f"{name}: measurements must contain finite numbers.")
+        if any(value < 200 or value > 1100 for value in wavelengths):
+            raise RequestError(400, f"{name}: wavelengths must be between 200 and 1100 nm.")
+        if any(current <= previous for previous, current in zip(wavelengths, wavelengths[1:])):
+            raise RequestError(400, f"{name}: wavelengths must be strictly increasing.")
+        if labelled and spectrum.get("label") not in LABELS:
+            raise RequestError(400, f"{name}: label must be fresh, pest, or rotten.")
+
+
+def build_kumo_payload(context, spectra):
+    reference_wavelengths = context[0]["wavelengths_nm"]
+    for sample in context + spectra:
+        if sample["wavelengths_nm"] != reference_wavelengths:
+            raise RequestError(400, "All context and query spectra must use the same wavelength positions.")
+
+    sample_ids = [sample["sample_name"] for sample in context + spectra]
+    if len(sample_ids) != len(set(sample_ids)):
+        raise RequestError(400, "Sample names must be unique across context and query spectra.")
+
+    context_labels = {sample["label"] for sample in context}
+    if context_labels != LABELS:
+        raise RequestError(400, "The labelled context must include fresh, pest, and rotten samples.")
+
+    id_column = "sample_id"
+    feature_indexes = list(range(len(reference_wavelengths)))
+    if len(feature_indexes) > MAX_KUMO_FEATURE_COLUMNS:
+        last_index = len(feature_indexes) - 1
+        feature_indexes = [
+            round(index * last_index / (MAX_KUMO_FEATURE_COLUMNS - 1))
+            for index in range(MAX_KUMO_FEATURE_COLUMNS)
+        ]
+    feature_columns = [f"wavelength_{index:04d}" for index in feature_indexes]
+    target_column = "quality"
+    columns = [id_column] + feature_columns + [target_column]
+    values = {
+        column: {"dtype": "float64", "stype": "numerical"}
+        for column in feature_columns
+    }
+    values[id_column] = {"dtype": "string", "stype": "ID", "nullable": False}
+    values[target_column] = {"dtype": "string", "stype": "categorical"}
+
+    return {
+        "model": "kumo-tabular",
+        "task": {
+            "kind": "classification",
+            "target": {
+                "column_name": target_column,
+                "dtype": "string",
+                "classes": sorted(LABELS),
+            },
+        },
+        "schema": {
+            "instance_table": {"columns": values, "primary_key": id_column},
+            "related_tables": {},
+            "relationships": [],
+        },
+        "context": {
+            "instance_table": {
+                "format": "arrays",
+                "columns": columns,
+                "rows": [
+                    [
+                        sample["sample_name"],
+                        *(sample["intensities"][index] for index in feature_indexes),
+                        sample["label"],
+                    ]
+                    for sample in context
+                ],
+            },
+            "related_tables": {},
+        },
+        "predict": {
+            "instance_table": {
+                "format": "arrays",
+                "columns": [id_column] + feature_columns,
+                "rows": [
+                    [
+                        sample["sample_name"],
+                        *(sample["intensities"][index] for index in feature_indexes),
+                    ]
+                    for sample in spectra
+                ],
+            },
+            "related_tables": {},
+        },
+        "output": {"fields": ["prediction", "probabilities"]},
+    }
+
+
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        return None
+
+
+def request_kumo(payload):
+    parsed = urlsplit(NVIDIA_KUMO_PREDICT_URL)
+    if parsed.scheme != "https" or parsed.hostname != "ai.api.nvidia.com" or not parsed.path:
+        raise RequestError(503, "Configure NVIDIA_KUMO_PREDICT_URL with the HTTPS NVIDIA API Catalog prediction URL.")
+
+    request = urllib.request.Request(
+        NVIDIA_KUMO_PREDICT_URL,
+        data=json.dumps(payload, allow_nan=False).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {NVIDIA_API_KEY}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    opener = urllib.request.build_opener(NoRedirectHandler())
+    try:
+        with opener.open(request, timeout=60) as response:
+            body = response.read(MAX_BODY_BYTES + 1)
+            if len(body) > MAX_BODY_BYTES:
+                raise RequestError(502, "NVIDIA returned an oversized response.")
+    except urllib.error.HTTPError as error:
+        if 300 <= error.code < 400:
+            raise RequestError(502, "NVIDIA returned an unexpected redirect.") from None
+        raise RequestError(502, f"NVIDIA Kumo request failed (HTTP {error.code}).") from None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        raise RequestError(502, "Could not reach the NVIDIA Kumo endpoint.") from None
+
+    try:
+        result = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise RequestError(502, "NVIDIA returned invalid JSON.") from None
+
+    predictions = result.get("predictions") if isinstance(result, dict) else None
+    if not isinstance(predictions, list) or len(predictions) != len(payload["predict"]["instance_table"]["rows"]):
+        raise RequestError(502, "NVIDIA returned an unexpected prediction response.")
+
+    normalized = []
+    seen = set()
+    for item in predictions:
+        if not isinstance(item, dict):
+            raise RequestError(502, "NVIDIA returned an invalid prediction item.")
+        index = item.get("row_index")
+        label = item.get("prediction")
+        probabilities = item.get("probabilities")
+        if type(index) is not int or index < 0 or index >= len(predictions) or index in seen:
+            raise RequestError(502, "NVIDIA returned invalid prediction row indexes.")
+        if not isinstance(label, str) or label not in LABELS or not isinstance(probabilities, dict):
+            raise RequestError(502, "NVIDIA returned an invalid classification.")
+        scores = [value for value in probabilities.values() if type(value) in (float, int) and math.isfinite(value)]
+        if len(scores) != len(probabilities) or not scores or any(value < 0 or value > 1 for value in scores):
+            raise RequestError(502, "NVIDIA returned invalid class probabilities.")
+        if label not in probabilities:
+            raise RequestError(502, "NVIDIA omitted the predicted class probability.")
+        seen.add(index)
+        normalized.append((index, label, probabilities[label]))
+
+    if len(seen) != len(predictions):
+        raise RequestError(502, "NVIDIA omitted one or more prediction rows.")
+    return normalized
 
 
 class ChiliScanHandler(BaseHTTPRequestHandler):
@@ -119,10 +274,11 @@ class ChiliScanHandler(BaseHTTPRequestHandler):
             return
         if not self._require_auth():
             return
+        configured = bool(NVIDIA_API_KEY and NVIDIA_KUMO_PREDICT_URL)
         self._send_json(200, {
             "api_version": 1,
-            "model_ready": False,
-            "model_name": None,
+            "model_ready": configured,
+            "model_name": "NVIDIA Kumo-Tabular" if configured else None,
         })
 
     def do_POST(self):
@@ -145,7 +301,16 @@ class ChiliScanHandler(BaseHTTPRequestHandler):
 
         try:
             payload = json.loads(self.rfile.read(content_length))
-            validate_request(payload)
+            if not isinstance(payload, dict) or payload.get("api_version") != 1:
+                raise RequestError(400, "Expected api_version 1.")
+            if not NVIDIA_API_KEY or not NVIDIA_KUMO_PREDICT_URL:
+                raise RequestError(503, "Configure the NVIDIA API key and prediction URL on the server.")
+            context = payload.get("context_spectra")
+            spectra = payload.get("spectra")
+            validate_spectra(context, labelled=True)
+            validate_spectra(spectra, labelled=False)
+            kumo_payload = build_kumo_payload(context, spectra)
+            predictions = request_kumo(kumo_payload)
         except (json.JSONDecodeError, UnicodeDecodeError):
             self._send_json(400, {"error": "invalid_json"})
             return
@@ -153,9 +318,16 @@ class ChiliScanHandler(BaseHTTPRequestHandler):
             self._send_json(error.status, {"error": str(error)})
             return
 
-        self._send_json(503, {
-            "error": "model_not_ready",
-            "message": "No trained classification model is configured.",
+        self._send_json(200, {
+            "api_version": 1,
+            "predictions": [
+                {
+                    "sample_name": spectra[index]["sample_name"],
+                    "label": label,
+                    "confidence": confidence,
+                }
+                for index, label, confidence in predictions
+            ],
         })
 
 

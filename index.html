@@ -20,7 +20,7 @@
       </div>
     </header>
 
-    <div class="intro" data-i18n="intro">匯入 Excel / CSV 光譜資料，自動辨識波長欄、繪製樣本曲線，計算指定波段的光譜特徵。一般分析在瀏覽器內進行；只有按下 Jetson AI 判斷時，勾選的光譜才會送到你設定的裝置。</div>
+    <div class="intro" data-i18n="intro">匯入 Excel / CSV 光譜資料，自動辨識波長欄、繪製樣本曲線，計算指定波段的光譜特徵。一般分析在瀏覽器內進行；只有按下 Kumo AI 判斷時，參考與待測光譜才會送到你設定的安全後端。</div>
 
     <section class="panel">
       <h2 data-i18n="importTitle">01　匯入光譜資料</h2>
@@ -86,15 +86,17 @@
     </section>
 
     <section class="panel jetson-panel">
-      <h2 data-i18n="jetsonTitle">NVIDIA Jetson Orin Nano 光譜 AI 判斷</h2>
-      <p class="note" data-i18n="jetsonHint">只會傳送目前勾選的分析曲線。GitHub Pages 需要 HTTPS Jetson API；存取權杖只保留在此頁面，不會儲存。</p>
+      <h2 data-i18n="jetsonTitle">NVIDIA Kumo-Tabular 光譜 AI 判斷</h2>
+      <p class="note" data-i18n="jetsonHint">勾選的光譜會作為待判斷樣本；未勾選且已標籤的光譜會作為參考資料，送往你設定的安全 API。NVIDIA 金鑰只應放在後端環境變數，切勿輸入此頁或提交至 GitHub。</p>
+      <p class="note" data-i18n="jetsonContextHint">先在未勾選的樣本選單指定已知標籤（新鮮／蟲害／腐爛），這些樣本作為 Kumo 參考資料；勾選樣本才會被預測。每一類都需至少一筆參考樣本，實驗準確度仍需更多獨立樣本驗證。</p>
+      <div class="status" id="jetsonContextStatus" role="status">參考資料：新鮮 0、蟲害 0、腐爛 0 筆。</div>
       <div class="tools jetson-tools">
-        <label class="field"><span data-i18n="jetsonUrlLabel">Jetson API 網址（HTTPS）</span><input id="jetsonUrl" type="url" autocomplete="url" placeholder="https://jetson.example"></label>
-        <label class="field"><span data-i18n="jetsonTokenLabel">存取權杖</span><input id="jetsonToken" type="password" autocomplete="new-password"></label>
-        <button class="btn secondary" id="jetsonConnect" type="button" data-i18n="jetsonConnect">測試 Jetson 連線</button>
-        <button class="btn" id="jetsonPredict" type="button" disabled data-i18n="jetsonPredict">判斷已選的平均光譜</button>
+        <label class="field"><span data-i18n="jetsonUrlLabel">安全後端 API 網址（不是 NVIDIA 模型頁）</span><input id="jetsonUrl" type="url" autocomplete="url" placeholder="https://api.example.com"></label>
+        <label class="field"><span data-i18n="jetsonTokenLabel">ChiliScan API 權杖（不是 NVIDIA 金鑰）</span><input id="jetsonToken" type="password" autocomplete="new-password"></label>
+        <button class="btn secondary" id="jetsonConnect" type="button" data-i18n="jetsonConnect">測試 API 連線</button>
+        <button class="btn" id="jetsonPredict" type="button" disabled data-i18n="jetsonPredict">用 Kumo 判斷勾選的光譜</button>
       </div>
-      <div class="status" id="jetsonStatus" role="status" data-i18n="jetsonIdle">尚未連線。需要 Jetson 分析服務與已載入的分類模型。</div>
+      <div class="status" id="jetsonStatus" role="status" data-i18n="jetsonIdle">尚未連線。請設定使用 HTTPS 的安全後端 API。</div>
       <div class="tablewrap jetson-results" id="jetsonResults" hidden>
         <table>
           <thead><tr><th data-i18n="jetsonSample">樣本</th><th data-i18n="jetsonClass">判斷結果</th><th data-i18n="jetsonConfidence">信心度</th></tr></thead>

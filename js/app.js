@@ -21,7 +21,7 @@
 // 1. 保存使用中的 Excel / CSV、工作表、樣本與選取狀態。
 // 2. 提供中英文切換、數值轉換、HTML跳脈防護與格式化工具。
 // 3. 不直接處理 Excel/CSV讀取或畫圖；這些工作交給後面的區塊。
-const $=id=>document.getElementById(id);let crossSpecs=[],crossCache=new Map();let workbook=null,rows=[],headers=[],sourceHeaders=[],widx=-1,series=[],selected=new Set(),hover=null,rawPage=0,demoDataLoaded=false,csvImported=false,replicateSummary={groups:0,measurements:0};let jetsonConnection=null,jetsonPhase='idle',jetsonDetail='',jetsonPredictions=[];const rawPageSize=100;const palette=['#60a5fa','#34d399','#fbbf24','#fb7185','#a78bfa','#22d3ee','#f472b6','#bef264','#f97316','#93c5fd'];
+const $=id=>document.getElementById(id);let crossSpecs=[],crossCache=new Map();let workbook=null,rows=[],headers=[],sourceHeaders=[],widx=-1,series=[],selected=new Set(),hover=null,rawPage=0,demoDataLoaded=false,csvImported=false,replicateSummary={groups:0,measurements:0};let knownLabels=new Map(),jetsonConnection=null,jetsonPhase='idle',jetsonDetail='',jetsonPredictions=[];const jetsonLabels=['fresh','pest','rotten'];const rawPageSize=100;const palette=['#60a5fa','#34d399','#fbbf24','#fb7185','#a78bfa','#22d3ee','#f472b6','#bef264','#f97316','#93c5fd'];
 const staticTranslations={
 'pageTitle':'ChiliScan | Spectral Data Analysis Platform V7',
 'brandSuffix':'/ Spectral Analysis Platform',
@@ -102,7 +102,7 @@ let currentLanguage=localStorage.getItem('chiliscan-language')||'zh';
 const uiTranslations={
   pageTitle:['ChiliScan｜光譜數據分析平台 V7','ChiliScan | Spectral Data Analysis Platform V7'],
   brandSubtitle:['／ 光譜分析平台','/ Spectral Analysis Platform'],
-  intro:['匯入 Excel / CSV 光譜資料，自動辨識波長欄、繪製樣本曲線，計算指定波段的光譜特徵。一般分析在瀏覽器內進行；只有按下 Jetson AI 判斷時，勾選的光譜才會送到你設定的裝置。','Import Excel / CSV spectral data to identify wavelength columns, plot sample curves, and calculate spectral features in a selected band. Routine analysis stays in your browser; selected spectra are sent to your configured Jetson only when you request AI classification.'],
+  intro:['匯入 Excel / CSV 光譜資料，自動辨識波長欄、繪製樣本曲線，計算指定波段的光譜特徵。一般分析在瀏覽器內進行；只有按下 Kumo AI 判斷時，參考與待測光譜才會送到你設定的安全後端。','Import Excel / CSV spectral data to identify wavelength columns, plot sample curves, and calculate spectral features in a selected band. Routine analysis stays in your browser; reference and query spectra are sent to your configured secure backend only when you request Kumo classification.'],
   importTitle:['01　匯入光譜資料','01  Import Spectral Data'],
   uploadTitle:['選擇 Excel / CSV，或將檔案拖曳到這裡','Choose an Excel / CSV file, or drag it here'],
   uploadHint:['支援 .xlsx、.xls、.csv。三次量測放在同一工作表不同欄，例如：辣椒1、辣椒2、辣椒3。','Supports .xlsx, .xls, and .csv. Put three measurements in separate columns on one worksheet, e.g. Pepper1, Pepper2, Pepper3.'],
@@ -176,13 +176,21 @@ const uiTranslations={
   rawHint:['依目前起始與結束波長，顯示所有可用樣本的逐波長強度；沒有對應量測值時會留白。資料較多時可使用分頁瀏覽。','Shows each available sample’s intensity by wavelength within the selected range. Missing measurements are blank; use pagination for large datasets.'],
   rawWavelength:['波長 (nm)','Wavelength (nm)'],
   rawWaiting:['匯入資料後顯示波段數據','Band data appears after import'],
-  jetsonTitle:['NVIDIA Jetson Orin Nano 光譜 AI 判斷','NVIDIA Jetson Orin Nano Spectral AI'],
-  jetsonHint:['只會傳送目前勾選的分析曲線。GitHub Pages 需要 HTTPS Jetson API；存取權杖只保留在此頁面，不會儲存。','Only selected analysis curves are sent. GitHub Pages requires an HTTPS Jetson API; the access token stays in this page and is not stored.'],
-  jetsonUrlLabel:['Jetson API 網址（HTTPS）','Jetson API URL (HTTPS)'],
-  jetsonTokenLabel:['存取權杖','Access Token'],
-  jetsonConnect:['測試 Jetson 連線','Test Jetson Connection'],
-  jetsonPredict:['判斷已選的平均光譜','Classify Selected Average Spectra'],
-  jetsonIdle:['尚未連線。需要 Jetson 分析服務與已載入的分類模型。','Not connected. A Jetson API service and a loaded classification model are required.'],
+  jetsonTitle:['NVIDIA Kumo-Tabular 光譜 AI 判斷','NVIDIA Kumo-Tabular Spectral AI'],
+  jetsonHint:['勾選的光譜會作為待判斷樣本；未勾選且已標籤的光譜會作為參考資料，送往你設定的安全 API。NVIDIA 金鑰只應放在後端環境變數，切勿輸入此頁或提交至 GitHub。','Checked spectra are queries; unchecked spectra with assigned labels are the reference context sent to your configured API. Keep the NVIDIA key only in the backend environment; never enter it here or commit it to GitHub.'],
+  jetsonUrlLabel:['安全後端 API 網址（不是 NVIDIA 模型頁）','Secure backend API URL (not the NVIDIA model page)'],
+  jetsonTokenLabel:['ChiliScan API 權杖（不是 NVIDIA 金鑰）','ChiliScan API token (not the NVIDIA key)'],
+  jetsonConnect:['測試 API 連線','Test API Connection'],
+  jetsonPredict:['用 Kumo 判斷勾選的光譜','Classify Selected Spectra with Kumo'],
+  jetsonIdle:['尚未連線。請設定使用 HTTPS 的安全後端 API。','Not connected. Configure a secure backend API using HTTPS.'],
+  jetsonContextHint:['先在未勾選的樣本選單指定已知標籤（新鮮／蟲害／腐爛），這些樣本作為 Kumo 參考資料；勾選樣本才會被預測。每一類都需至少一筆參考樣本，實驗準確度仍需更多獨立樣本驗證。','Assign known labels (fresh / pest / rotten) to unchecked samples; they form Kumo’s labelled context. Only checked samples are predicted. Each class needs at least one context example; meaningful accuracy still requires more independent samples.'],
+  labelUnknown:['未標記','Unlabelled'],
+  labelFresh:['新鮮','Fresh'],
+  labelPest:['蟲害','Pest'],
+  labelRotten:['腐爛','Rotten'],
+  qualityLabel:['參考標籤','Reference label'],
+  noQuerySpectra:['請勾選至少一個已平均的光譜作為預測樣本。','Check at least one averaged spectrum to classify.'],
+  missingContext:['請在未勾選的樣本中，為新鮮、蟲害、腐爛各指定至少一筆參考標籤。','Assign at least one unchecked reference sample for each class: fresh, pest, and rotten.'],
   jetsonSample:['樣本','Sample'],
   jetsonClass:['判斷結果','Classification'],
   jetsonConfidence:['信心度','Confidence'],
@@ -320,7 +328,7 @@ function applyReplicateAveraging(rawSeries){
   }
   replicateSummary.groups++;
   replicateSummary.measurements+=members.length;
-  if(mode==='both')processed.push(...members);
+  if(mode==='both')processed.push(...members.map(member=>({...member,replicateIndividual:true})));
   const wavelengthMap=new Map();
   members.forEach(s=>{
    s.data.forEach(p=>{
@@ -357,37 +365,73 @@ function replicateStatus(){
   :'未偵測到重複量測欄；請確認重複量測使用相同樣本名稱或同一組欄位標題。';
 }
 
+function classificationKey(sample){
+ return sample.classificationKey||sample.key||`${sample.sheet||$('sheet').value}::${sample.column}`;
+}
+function inferredLabelFor(sample){
+ const sheet=sample.sheet||$('sheet').value;
+ if(sheet==='新鮮'||sheet==='新鮮平均')return 'fresh';
+ if(sheet==='蟲害'||sheet==='蟲害平均')return 'pest';
+ if(sheet==='腐爛'||sheet==='腐爛平均')return 'rotten';
+ return '';
+}
+function knownLabelFor(sample){
+ const key=classificationKey(sample);
+ return knownLabels.has(key)?knownLabels.get(key):inferredLabelFor(sample);
+}
 function selectedJetsonSpectra(){
  const mode=$('replicateMode').value;
  if(mode==='individual')return [];
- return [...selected].map(index=>series[index]).filter(sample=>sample&&sample.data.length&&(mode!=='both'||sample.replicates>1));
+ return [...selected].map(index=>series[index]).filter(sample=>sample&&sample.data.length&&
+  (mode!=='both'||!sample.replicateIndividual)
+ );
+}
+function selectedJetsonContext(){
+ return series.filter((_,index)=>!selected.has(index)).map(sample=>({
+  sample,
+  label:knownLabelFor(sample)
+ })).filter(item=>item.label&&item.sample.data.length);
+}
+function canClassifyWithJetson(){
+ const labels=new Set(selectedJetsonContext().map(item=>item.label));
+ return selectedJetsonSpectra().length>0&&jetsonLabels.every(label=>labels.has(label));
 }
 function renderJetsonStatus(){
  const status=$('jetsonStatus');
  if(!status)return;
  const en=currentLanguage==='en';
  const messages={
-  idle:en?'Not connected. A Jetson API service and a loaded classification model are required.':'尚未連線。需要 Jetson 分析服務與已載入的分類模型。',
-  checking:en?'Checking the Jetson API…':'正在測試 Jetson API 連線…',
+  idle:en?'Not connected. Configure a secure backend API using HTTPS.':'尚未連線。請設定使用 HTTPS 的安全後端 API。',
+  checking:en?'Checking the secure API…':'正在測試安全 API 連線…',
   ready:en?`Connected${jetsonDetail?`: ${jetsonDetail}`:''}. Ready to classify selected spectra.`:`已連線${jetsonDetail?`：${jetsonDetail}`:''}。可以判斷已選光譜。`,
-  'no-model':en?'API is reachable, but no classification model is loaded. No prediction will be shown.':'API 已連線，但尚未載入分類模型；不會顯示分類結果。',
-  predicting:en?'Sending selected spectra to Jetson for classification…':'正在將勾選的光譜送到 Jetson 判斷…',
+  'no-model':en?'API is reachable, but NVIDIA Kumo credentials are not configured on the backend. No prediction will be shown.':'API 已連線，但後端尚未設定 NVIDIA Kumo 憑證；不會顯示分類結果。',
+  predicting:en?'Sending reference and selected spectra for Kumo classification…':'正在送出參考與勾選光譜進行 Kumo 分類…',
   complete:en?`Classification complete: ${jetsonPredictions.length} sample(s).`:`分類完成：${jetsonPredictions.length} 個樣本。`,
-  error:en?`Jetson request failed: ${jetsonDetail}`:`Jetson 連線失敗：${jetsonDetail}`
+  error:en?`Secure API request failed: ${jetsonDetail}`:`安全 API 連線失敗：${jetsonDetail}`
  };
  status.textContent=messages[jetsonPhase]||messages.idle;
  status.dataset.state=jetsonPhase;
+ const context=selectedJetsonContext();
+ const labelCounts={fresh:0,pest:0,rotten:0};
+ context.forEach(item=>{labelCounts[item.label]++});
+ const contextHint=$('jetsonContextStatus');
+ if(contextHint){
+  contextHint.textContent=en
+   ?`Reference context: ${labelCounts.fresh} fresh, ${labelCounts.pest} pest, ${labelCounts.rotten} rotten.`
+   :`參考資料：新鮮 ${labelCounts.fresh}、蟲害 ${labelCounts.pest}、腐爛 ${labelCounts.rotten} 筆。`;
+ }
  const busy=jetsonPhase==='checking'||jetsonPhase==='predicting';
  $('jetsonConnect').disabled=busy;
  $('jetsonUrl').disabled=busy;
  $('jetsonToken').disabled=busy;
- $('jetsonPredict').disabled=busy||!jetsonConnection?.ready||!selectedJetsonSpectra().length;
+ $('jetsonPredict').disabled=busy||!jetsonConnection?.ready||!canClassifyWithJetson();
 }
 function renderJetsonResults(){
  const container=$('jetsonResults');
  if(!container)return;
  container.hidden=!jetsonPredictions.length;
- $('jetsonResultBody').innerHTML=jetsonPredictions.map(item=>`<tr><td>${escapeHtml(item.sample_name)}</td><td>${escapeHtml(item.label)}</td><td>${fmt(item.confidence*100,1)}%</td></tr>`).join('');
+ const labelNames={fresh:uiTranslations.labelFresh[0],pest:uiTranslations.labelPest[0],rotten:uiTranslations.labelRotten[0]};
+ $('jetsonResultBody').innerHTML=jetsonPredictions.map(item=>`<tr><td>${escapeHtml(item.sample_name)}</td><td>${escapeHtml(labelNames[item.label]||item.label)}</td><td>${fmt(item.confidence*100,1)}%</td></tr>`).join('');
 }
 function clearJetsonPredictions(){
  jetsonPredictions=[];
@@ -400,6 +444,8 @@ function jetsonApiBase(){
  if(!raw)throw Error(currentLanguage==='en'?'Enter the Jetson API URL.':'請輸入 Jetson API 網址。');
  let url;
  try{url=new URL(raw)}catch{throw Error(currentLanguage==='en'?'The Jetson API URL is invalid.':'Jetson API 網址格式不正確。')}
+ if(url.hostname==='build.nvidia.com')
+  throw Error(currentLanguage==='en'?'Enter your secure backend API URL, not the NVIDIA model page.':'請輸入你部署的安全後端 API 網址，不是 NVIDIA 模型介紹頁。');
  if(!['https:','http:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)
   throw Error(currentLanguage==='en'?'Use an HTTP(S) URL without credentials, query, or fragment.':'請使用不含帳密、查詢參數或片段的 HTTP(S) 網址。');
  const localHost=['localhost','127.0.0.1','[::1]'].includes(location.hostname);
@@ -445,7 +491,8 @@ async function connectJetson(){
 }
 async function classifyWithJetson(){
  const spectra=selectedJetsonSpectra();
- if(!jetsonConnection?.ready||!spectra.length)return;
+ const context=selectedJetsonContext();
+ if(!jetsonConnection?.ready||!spectra.length||!canClassifyWithJetson())return;
  jetsonPredictions=[];jetsonDetail='';jetsonPhase='predicting';renderJetsonStatus();renderJetsonResults();
  try{
   const requestSpectra=spectra.map(sample=>({
@@ -454,10 +501,17 @@ async function classifyWithJetson(){
    intensities:sample.data.map(point=>point.y),
    replicate_count:sample.replicates||1
   }));
+  const contextSpectra=context.map(({sample,label})=>({
+   sample_name:sample.name,
+   label,
+   wavelengths_nm:sample.data.map(point=>point.w),
+   intensities:sample.data.map(point=>point.y),
+   replicate_count:sample.replicates||1
+  }));
   const result=await requestJetson(jetsonConnection.base,'/api/v1/predict',{
    method:'POST',
    headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({api_version:1,spectra:requestSpectra})
+   body:JSON.stringify({api_version:1,context_spectra:contextSpectra,spectra:requestSpectra})
   });
   if(!result||typeof result!=='object'||result.api_version!==1||!Array.isArray(result.predictions)||result.predictions.length!==requestSpectra.length)
    throw Error(currentLanguage==='en'?'Prediction response does not match the request.':'分類回傳筆數與送出樣本不一致。');
@@ -545,7 +599,12 @@ function analyze(){
  const oldBases=new Set(previousSelection.map(s=>s.baseName));
  const analysisHeaders=demoDataLoaded?headers:sourceHeaders;
  const extracted=extractSpectra(analysisHeaders,headers,rows,widx,from,to);
- series=extracted.items.map(item=>({...item,i:item.column}));
+ series=extracted.items.map(item=>({
+  ...item,
+  i:item.column,
+  sheet:$('sheet').value,
+  classificationKey:`${$('sheet').value}::${item.column}`
+ }));
  series=applyReplicateAveraging(series);
  selected=new Set(series.map((v,i)=>oldNames.size?(oldNames.has(v.name)||oldBases.has(v.baseName)?i:-1):(i<Math.min(3,series.length)?i:-1)).filter(i=>i>=0));
  if(!selected.size&&series.length)selected.add(0);
@@ -603,7 +662,13 @@ function analyzeCross(){
  const previousSelection=[...selected].map(i=>series[i]).filter(Boolean);
  const oldKeys=new Set(previousSelection.map(s=>s.key));
  const oldBases=new Set(previousSelection.map(s=>s.baseName));
- series=chosen.flatMap(name=>readSheetSeries(name).items.filter(item=>wanted.has(item.key)).map(item=>({...item,name:`${name}／${item.name}`,baseName:`${name}／${item.baseName}`,data:item.data.filter(p=>p.w>=from&&p.w<=to)})).filter(item=>item.data.length));
+ series=chosen.flatMap(name=>readSheetSeries(name).items.filter(item=>wanted.has(item.key)).map(item=>({
+  ...item,
+  name:`${name}／${item.name}`,
+  baseName:`${name}／${item.baseName}`,
+  classificationKey:item.key,
+  data:item.data.filter(p=>p.w>=from&&p.w<=to)
+ })).filter(item=>item.data.length));
  series=applyReplicateAveraging(series);
  selected=new Set(series.map((s,i)=>oldKeys.size?(oldKeys.has(s.key)||oldBases.has(s.baseName)?i:-1):i).filter(i=>i>=0));
  if(!selected.size)selected=new Set(series.map((_,i)=>i));
@@ -645,7 +710,21 @@ $('replicateMode').addEventListener('change',()=>{
 // feature：從單一樣本在指定波段內找出波峰、平均、最低與有效點數。
 function feature(s){const a=s.data;if(!a.length)return null;let peak=a.reduce((p,c)=>c.y>p.y?c:p,a[0]);return {name:s.name,w:peak.w,max:peak.y,mean:a.reduce((v,p)=>v+p.y,0)/a.length,min:Math.min(...a.map(p=>p.y)),n:a.length}}
 // render：統一更新摘要卡、特徵表、原始數據表、圖例、樣本清單與Canvas。
-function render(){const first=[...selected][0],f=first===undefined?null:feature(series[first]);$('peakW').textContent=f?fmt(f.w,3):'—';$('peakI').textContent=f?fmt(f.max):'—';$('mean').textContent=f?fmt(f.mean):'—';$('points').textContent=f?f.n:'—';const onlyLabel=currentLanguage==='en'?'Only':'單獨';$('samples').innerHTML=series.length?series.map((s,i)=>`<label class="sample"><input type="checkbox" data-i="${i}" ${selected.has(i)?'checked':''}><span>${escapeHtml(s.name)}</span><button class="mini" data-only="${i}" type="button">${onlyLabel}</button></label>`).join(''):(currentLanguage==='en'?'<div class="empty">No drawable samples</div>':'<div class="empty">沒有可繪製的樣本</div>');$('legend').innerHTML=[...selected].map(i=>`<label><i style="background:${palette[i%palette.length]}"></i>${escapeHtml(series[i].name)}</label>`).join('');$('tbody').innerHTML=series.length?series.map(s=>{const f=feature(s);return f?`<tr><td>${escapeHtml(f.name)}</td><td>${fmt(f.w,3)}</td><td>${fmt(f.max)}</td><td>${fmt(f.mean)}</td><td>${fmt(f.min)}</td><td>${f.n}</td></tr>`:''}).join(''):(currentLanguage==='en'?'<tr><td colspan="6">No data</td></tr>':'<tr><td colspan="6">沒有資料</td></tr>');renderRawData();draw();renderJetsonStatus()}
+function render(){
+ const first=[...selected][0],f=first===undefined?null:feature(series[first]);
+ $('peakW').textContent=f?fmt(f.w,3):'—';$('peakI').textContent=f?fmt(f.max):'—';$('mean').textContent=f?fmt(f.mean):'—';$('points').textContent=f?f.n:'—';
+ const onlyLabel=currentLanguage==='en'?'Only':'單獨';
+ const labelText=currentLanguage==='en'?['Unlabelled','Fresh','Pest','Rotten']:['未標記','新鮮','蟲害','腐爛'];
+ const labels=['','fresh','pest','rotten'];
+ $('samples').innerHTML=series.length?series.map((s,i)=>{
+  const key=classificationKey(s),value=knownLabelFor(s);
+  const options=labels.map((label,index)=>`<option value="${label}" ${value===label?'selected':''}>${labelText[index]}</option>`).join('');
+  return `<div class="sample"><label class="sample-select"><input type="checkbox" data-i="${i}" ${selected.has(i)?'checked':''}><span>${escapeHtml(s.name)}</span></label><select class="quality-label" data-quality-key="${escapeHtml(key)}" aria-label="${currentLanguage==='en'?'Reference label':'參考標籤'}">${options}</select><button class="mini" data-only="${i}" type="button">${onlyLabel}</button></div>`;
+ }).join(''):(currentLanguage==='en'?'<div class="empty">No drawable samples</div>':'<div class="empty">沒有可繪製的樣本</div>');
+ $('legend').innerHTML=[...selected].map(i=>`<label><i style="background:${palette[i%palette.length]}"></i>${escapeHtml(series[i].name)}</label>`).join('');
+ $('tbody').innerHTML=series.length?series.map(s=>{const f=feature(s);return f?`<tr><td>${escapeHtml(f.name)}</td><td>${fmt(f.w,3)}</td><td>${fmt(f.max)}</td><td>${fmt(f.mean)}</td><td>${fmt(f.min)}</td><td>${f.n}</td></tr>`:''}).join(''):(currentLanguage==='en'?'<tr><td colspan="6">No data</td></tr>':'<tr><td colspan="6">沒有資料</td></tr>');
+ renderRawData();draw();renderJetsonStatus()
+}
 // 將目前波段內所有樣本整理成逐波長表格，最多每頁顯示100筆。
 function renderRawData(){
  const usable=series.filter(s=>s.data.length);
@@ -667,7 +746,18 @@ function renderRawData(){
 }
 $('rawPrev').onclick=()=>{if(rawPage>0){rawPage--;renderRawData()}};
 $('rawNext').onclick=()=>{rawPage++;renderRawData()};
-$('samples').addEventListener('change',e=>{if(e.target.matches('input[data-i]')){let i=Number(e.target.dataset.i);e.target.checked?selected.add(i):selected.delete(i);clearJetsonPredictions();render()}});$('samples').addEventListener('click',e=>{if(e.target.dataset.only!==undefined){selected=new Set([Number(e.target.dataset.only)]);clearJetsonPredictions();render()}});$('all').onclick=()=>{selected=selected.size===series.length?new Set():new Set(series.map((_,i)=>i));clearJetsonPredictions();render()};
+$('samples').addEventListener('change',e=>{
+ if(e.target.matches('input[data-i]')){
+  const i=Number(e.target.dataset.i);
+  e.target.checked?selected.add(i):selected.delete(i);
+  clearJetsonPredictions();render();
+ }else if(e.target.matches('select[data-quality-key]')){
+  knownLabels.set(e.target.dataset.qualityKey,e.target.value);
+  clearJetsonPredictions();render();
+ }
+});
+$('samples').addEventListener('click',e=>{if(e.target.dataset.only!==undefined){selected=new Set([Number(e.target.dataset.only)]);clearJetsonPredictions();render()}});
+$('all').onclick=()=>{selected=selected.size===series.length?new Set():new Set(series.map((_,i)=>i));clearJetsonPredictions();render()};
 // draw：Canvas繪圖入口，負責座標軸、刻度、曲線平滑、Y軸縮放與游標提示。
 function draw(){const c=$('chart'),r=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1;c.width=Math.max(300,Math.round(r.width*dpr));c.height=Math.max(220,Math.round(r.height*dpr));const ctx=c.getContext('2d');ctx.scale(dpr,dpr);const W=c.width/dpr,H=c.height/dpr;ctx.clearRect(0,0,W,H);const L=62,R=18,T=20,B=44,pw=W-L-R,ph=H-T-B;ctx.font='12px sans-serif';ctx.textBaseline='middle';const vis=[...selected].map(i=>({s:series[i],i})).filter(o=>o.s&&o.s.data.length);if(!vis.length){ctx.fillStyle='#91a5bc';ctx.textAlign='center';ctx.fillText(currentLanguage==='en'?'Check at least one sample':'請勾選至少一個樣本',W/2,H/2);return}const x0=Number($('from').value),x1=Number($('to').value);let vals=vis.flatMap(o=>o.s.data.map(p=>p.y));const dataMin=Math.min(...vals),dataMax=Math.max(...vals);let y0=Math.min(0,dataMin),y1=Math.max(0,dataMax);if(y0===y1)y1=y0+1;let pad=(y1-y0)*.07;y0-=pad;y1+=pad;if(dataMin>=0)y0=0;else if(dataMax<=0)y1=0;if($('ymode').value==='manual'){const low=num($('ymin').value),high=num($('ymax').value);if(Number.isFinite(low)&&Number.isFinite(high)&&low<high){y0=low;y1=high;$('yerror').style.display='none'}else{$('yerror').textContent=currentLanguage==='en'?'Y-axis minimum must be less than maximum, and both values must be numbers. Auto scale is shown for now.':'Y軸最小值必須小於最大值，且兩者皆需填寫數字；目前暫以自動刻度顯示。';$('yerror').style.display='block'}}else{$('yerror').style.display='none'}const X=v=>L+(v-x0)/(x1-x0)*pw,Y=v=>T+(y1-v)/(y1-y0)*ph;ctx.lineWidth=1;ctx.strokeStyle='#314255';ctx.fillStyle='#9eb1c8';ctx.textAlign='right';for(let i=0;i<=5;i++){let y=T+ph*i/5;ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(W-R,y);ctx.stroke();ctx.fillText(fmt(y1-(y1-y0)*i/5,0),L-10,y)}ctx.textAlign='center';const requestedStep=num($('xstep').value);const step=Number.isFinite(requestedStep)&&requestedStep>0?requestedStep:(x1-x0)/6;const tickCount=Math.floor((x1-x0)/step)+1;if(tickCount>150){$('status').textContent=currentLanguage==='en'?'X-axis ticks are too dense; increase the tick spacing.':'X軸刻度過密，請調大刻度間距';}const safeStep=tickCount>150?(x1-x0)/6:step;let ticks=[];const start=Math.ceil((x0-1e-9)/safeStep)*safeStep;for(let v=start,n=0;v<=x1+1e-8&&n<151;v+=safeStep,n++)ticks.push(Number(v.toFixed(9)));if(!ticks.length)ticks=[x0,x1];const labelStride=Math.max(1,Math.ceil(ticks.length/Math.max(2,Math.floor(pw/62))));ticks.forEach((v,i)=>{let x=X(v);ctx.beginPath();ctx.moveTo(x,T);ctx.lineTo(x,T+ph);ctx.stroke();if(i%labelStride===0)ctx.fillText(fmt(v,2),x,H-23)});vis.forEach(({s,i})=>{ctx.beginPath();ctx.strokeStyle=palette[i%palette.length];ctx.lineWidth=2.4;const n=Number($('smooth').value);const pts=s.data.map((p,j)=>{if(n===1)return p;let half=Math.floor(n/2),part=s.data.slice(Math.max(0,j-half),Math.min(s.data.length,j+half+1));return {w:p.w,y:part.reduce((a,b)=>a+b.y,0)/part.length}});pts.forEach((p,j)=>j?ctx.lineTo(X(p.w),Y(p.y)):ctx.moveTo(X(p.w),Y(p.y)));ctx.stroke()});if(hover!==null&&hover>=L&&hover<=W-R){let wave=x0+(hover-L)/pw*(x1-x0);ctx.strokeStyle='#b9c9dc';ctx.setLineDash([4,5]);ctx.beginPath();ctx.moveTo(hover,T);ctx.lineTo(hover,T+ph);ctx.stroke();ctx.setLineDash([]);let text=vis.slice(0,4).map(({s})=>{let p=s.data.reduce((a,b)=>Math.abs(b.w-wave)<Math.abs(a.w-wave)?b:a);return `${s.name}: ${fmt(p.y)} @ ${fmt(p.w,2)} nm`});let boxW=Math.min(W-20,Math.max(155,...text.map(s=>ctx.measureText(s).width+18)));let bx=Math.min(Math.max(hover+10,8),W-boxW-8),by=T+10;ctx.fillStyle='#24364a';ctx.fillRect(bx,by,boxW,22+text.length*18);ctx.fillStyle='#fff';ctx.textAlign='left';ctx.fillText(`${currentLanguage==='en'?'Cursor':'游標位置'} ${fmt(wave,2)} nm`,bx+9,by+13);text.forEach((s,i)=>ctx.fillText(s,bx+9,by+32+i*18))}}
 $('smooth').addEventListener('change',draw);$('ymode').addEventListener('change',()=>{const manual=$('ymode').value==='manual';$('ymin').disabled=!manual;$('ymax').disabled=!manual;if(manual){const vals=[...selected].flatMap(i=>(series[i]?.data||[]).map(p=>p.y));if(vals.length){const lo=Math.min(0,...vals),hi=Math.max(...vals),pad=Math.max(1,(hi-lo)*.07);if(!$('ymin').value)$('ymin').value=String(Math.floor(lo-pad));if(!$('ymax').value)$('ymax').value=String(Math.ceil(hi+pad))}}draw()});['ymin','ymax'].forEach(id=>$(id).addEventListener('input',draw));$('yreset').addEventListener('click',()=>{$('ymode').value='auto';$('ymin').value='';$('ymax').value='';$('ymin').disabled=true;$('ymax').disabled=true;draw()});$('chart').addEventListener('mousemove',e=>{hover=e.clientX-$('chart').getBoundingClientRect().left;draw()});$('chart').addEventListener('mouseleave',()=>{hover=null;draw()});window.addEventListener('resize',draw);

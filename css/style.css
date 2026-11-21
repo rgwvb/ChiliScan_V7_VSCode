@@ -425,13 +425,32 @@ header {
   transition: .15s ease;
 }
 
+.sample-select {
+  display: flex;
+  flex: 1 1 145px;
+  min-width: 90px;
+  align-items: center;
+  gap: 8px;
+}
+
+.sample-select input { flex: 0 0 auto; accent-color: #54c9a7; }
+.sample-select span { min-width: 0; overflow-wrap: anywhere; }
+.sample .quality-label {
+  flex: 0 0 106px;
+  min-width: 0;
+  height: 34px;
+  padding: 5px 7px;
+  background: #0f1927;
+  border: 1px solid #385068;
+  border-radius: 8px;
+  color: #dce8f3;
+  font-size: 11px;
+}
+
 .sample:has(input:checked) {
   border-color: rgba(88, 198, 167, .48);
   background: rgba(40, 83, 78, .19);
 }
-
-.sample input { accent-color: #54c9a7; }
-.sample span { flex: 1; min-width: 0; }
 
 .sample .mini {
   flex: 0 0 auto;
@@ -592,6 +611,9 @@ td:first-child { font-weight: 700; color: #dfeaf4; }
   .raw-data-controls { align-items: stretch; }
   .raw-data-controls .tools { width: 100%; }
   .raw-data-controls .btn { flex: 1 1 180px; }
+  .sample { flex-wrap: wrap; }
+  .sample-select { flex-basis: calc(100% - 8px); }
+  .sample .quality-label { flex: 1 1 130px; }
 }
 
 @media (max-width: 380px) {
