@@ -327,34 +327,22 @@
 
   function renderResults(results) {
     const validation = referenceSet.validation;
+    const formatRate = (item) =>
+      `${item.correct}/${item.count}（${(100 * item.correct / item.count).toFixed(1)}%）`;
     $('resultWarning').textContent =
-      `實驗版提醒：目前參考資料留一測試中，腐爛樣本只判對 ${validation.totals.rotten.correct}/${validation.totals.rotten.count}。` +
-      `判斷以吸光度 RMSE 的 3 個最近參考樣本投票，投票比例不是機率；請勿單獨作為食品安全依據。`;
+      `參考資料留一交叉驗證：整體準確率 ${validation.correct}/${validation.count}（${(100 * validation.correct / validation.count).toFixed(1)}%）；` +
+      `新鮮辨識率 ${formatRate(validation.totals.fresh)}，腐爛辨識率 ${formatRate(validation.totals.rotten)}。` +
+      `這是參考資料的整體測試結果，不代表單筆樣本準確率；目前分類仍依 3 個近鄰判斷，請勿單獨作為食品安全依據。`;
     $('resultList').innerHTML = results.map((result) => {
       if (result.error) {
         return `<article class="result-card"><h3>${escapeHtml(result.name)}</h3><span class="result-label rotten">無法判斷</span><p>${escapeHtml(result.error)}</p></article>`;
       }
-      const votes = result.prediction.votes;
-      const totalVotes = votes.fresh + votes.rotten;
-      const freshPercent = totalVotes ? (100 * votes.fresh / totalVotes).toFixed(1) : '0.0';
-      const rottenPercent = totalVotes ? (100 * votes.rotten / totalVotes).toFixed(1) : '0.0';
       const displayedLabel = labelName(result.prediction.label);
       const className = result.prediction.label === 'rotten' ? 'result-label rotten' : 'result-label';
       return `<article class="result-card">
         <h3>${escapeHtml(result.name)}</h3>
         <span class="${className}">暫定較接近：${displayedLabel}</span>
         <p>有效共同波長：${result.sharedCount}/${referenceSet.wavelengths.length} 點</p>
-        <div class="vote-share">
-          <div class="vote-share-labels">
-            <span class="fresh">新鮮 <strong>${freshPercent}%</strong></span>
-            <span class="rotten">腐爛 <strong>${rottenPercent}%</strong></span>
-          </div>
-          <div class="vote-share-bar" role="img" aria-label="近鄰投票占比：新鮮 ${freshPercent}%，腐爛 ${rottenPercent}%，不是機率">
-            <span class="fresh" style="width:${freshPercent}%"></span>
-            <span class="rotten" style="width:${rottenPercent}%"></span>
-          </div>
-          <small>依 3 個最近參考樣本的投票占比，不是機率。</small>
-        </div>
       </article>`;
     }).join('');
     $('resultsPanel').hidden = false;

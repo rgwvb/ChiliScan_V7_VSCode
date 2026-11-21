@@ -82,51 +82,6 @@
   color: #ffd18a;
 }
 
-.vote-share {
-  margin-top: 12px;
-}
-
-.vote-share-labels {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 13px;
-}
-
-.vote-share-labels .fresh { color: #a5ead5; }
-.vote-share-labels .rotten { color: #ffd18a; }
-
-.vote-share-labels strong {
-  margin-left: 4px;
-  font-size: 15px;
-}
-
-.vote-share-bar {
-  display: flex;
-  height: 9px;
-  margin-top: 7px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #243142;
-}
-
-.vote-share-bar span {
-  display: block;
-  flex: 0 0 auto;
-  height: 100%;
-  transition: width .2s ease;
-}
-
-.vote-share-bar .fresh { background: linear-gradient(90deg, #48b99a, #7cddbd); }
-.vote-share-bar .rotten { background: linear-gradient(90deg, #d99748, #ffca7b); }
-
-.vote-share small {
-  display: block;
-  margin-top: 5px;
-  color: #8fa4b9;
-  font-size: 11px;
-}
-
 .result-card p {
   margin: 8px 0 0;
   color: #c1ccda;
