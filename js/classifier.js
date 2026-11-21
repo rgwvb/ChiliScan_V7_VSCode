@@ -334,9 +334,6 @@
       if (result.error) {
         return `<article class="result-card"><h3>${escapeHtml(result.name)}</h3><span class="result-label rotten">無法判斷</span><p>${escapeHtml(result.error)}</p></article>`;
       }
-      const neighbors = result.prediction.neighbors.map(({ sample, distance }) =>
-        `<li>${escapeHtml(sample.name)}（${labelName(sample.label)}，RMSE ${distance.toFixed(4)}）</li>`
-      ).join('');
       const votes = result.prediction.votes;
       const totalVotes = votes.fresh + votes.rotten;
       const freshPercent = totalVotes ? (100 * votes.fresh / totalVotes).toFixed(1) : '0.0';
@@ -358,7 +355,6 @@
           </div>
           <small>依 3 個最近參考樣本的投票占比，不是機率。</small>
         </div>
-        <ol>${neighbors}</ol>
       </article>`;
     }).join('');
     $('resultsPanel').hidden = false;

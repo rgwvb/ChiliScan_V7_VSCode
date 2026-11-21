@@ -127,20 +127,10 @@
   font-size: 11px;
 }
 
-.result-card p,
-.result-card ol {
+.result-card p {
   margin: 8px 0 0;
   color: #c1ccda;
   line-height: 1.55;
-}
-
-.result-card ol {
-  padding-left: 22px;
-}
-
-.result-card li {
-  margin: 4px 0;
-  overflow-wrap: anywhere;
 }
 
 @media (max-width: 620px) {
