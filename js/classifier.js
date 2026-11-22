@@ -1,11 +1,17 @@
 (() => {
   'use strict';
 
+  ['chiliscan-kumo-reference-library', 'chiliscan-kumo-api-url', 'chiliscan-kumo-api-token']
+    .forEach((key) => localStorage.removeItem(key));
+
+  // 本模組處理新鮮／腐爛吸光度頁：讀取參考與待測檔、執行 3 近鄰比對並更新畫面。
+  // 光譜處理與分類都在瀏覽器執行，不會上傳資料。
   const BAND_MIN = 620;
   const BAND_MAX = 680;
   const MIN_SHARED_WAVELENGTHS = 40;
   const NEIGHBOR_COUNT = 3;
   const STORAGE_KEY = 'chiliscan-absorbance-binary-reference-v1';
+  // 頁面各狀態訊息的繁中與英文版本集中在此，方便切換語言時重新顯示動態內容。
   const messages = {
     pageTitle: ['ChiliScan｜吸光度新鮮／腐爛判斷', 'ChiliScan | Absorbance Fresh / Rotten Classification'],
     brandSuffix: ['／ 新鮮・腐爛判斷', '/ Fresh / Rotten Classification'],
@@ -114,6 +120,7 @@
   let referenceStatusState = { key: 'referenceNotLoaded', values: {}, isError: false };
   let queryStatusState = { key: 'queryWaiting', values: {}, isError: false };
 
+  // 依目前語言格式化訊息；錯誤也保留翻譯代碼，切換語言後可以重新呈現。
   function formatMessage(key, values = {}) {
     const template = messages[key]?.[language === 'en' ? 1 : 0] || key;
     return template.replace(/\{(\w+)\}/g, (_, name) => {
@@ -177,6 +184,7 @@
     if (latestResults) renderResults(latestResults);
   }
 
+  // 光譜檔解析：將儲存格轉成有限數值，辨識波長／標準白欄，並取得各樣本吸光度。
   function numberOrNull(value) {
     if (typeof value === 'number') return Number.isFinite(value) ? value : null;
     if (typeof value !== 'string' || value.trim() === '') return null;
@@ -329,6 +337,7 @@
     return { samples, converted: convertIntensity };
   }
 
+  // 分類與驗證：把共同有效波長轉成向量，以 RMSE 選出最近參考樣本並計算留一驗證。
   function getCommonWavelengths(samples) {
     if (!samples.length) return [];
     return [...samples[0].points.keys()]
@@ -340,25 +349,34 @@
     return wavelengths.map((wavelength) => sample.points.get(wavelength));
   }
 
-  function rmse(left, right) {
+  function rmse(left, right, rightIndexes = null) {
     let squaredError = 0;
     for (let index = 0; index < left.length; index++) {
-      const difference = left[index] - right[index];
+      const rightIndex = rightIndexes ? rightIndexes[index] : index;
+      const difference = left[index] - right[rightIndex];
       squaredError += difference * difference;
     }
     return Math.sqrt(squaredError / left.length);
   }
 
-  function predictByNeighbors(vector, samples, excludedIndex = -1) {
-    const neighbors = samples
-      .map((sample, index) => ({
-        sample,
+  function predictByNeighbors(vector, samples, excludedIndex = -1, featureIndexes = null) {
+    const neighborLimit = Math.min(NEIGHBOR_COUNT, samples.length - (excludedIndex >= 0 ? 1 : 0));
+    const neighbors = [];
+    for (let index = 0; index < samples.length; index++) {
+      if (index === excludedIndex) continue;
+      const item = {
+        sample: samples[index],
         index,
-        distance: rmse(vector, sample.values)
-      }))
-      .filter((item) => item.index !== excludedIndex)
-      .sort((left, right) => left.distance - right.distance)
-      .slice(0, Math.min(NEIGHBOR_COUNT, samples.length - (excludedIndex >= 0 ? 1 : 0)));
+        distance: rmse(vector, samples[index].values, featureIndexes)
+      };
+      const insertionIndex = neighbors.findIndex((neighbor) => item.distance < neighbor.distance);
+      if (insertionIndex < 0) {
+        neighbors.push(item);
+      } else {
+        neighbors.splice(insertionIndex, 0, item);
+      }
+      if (neighbors.length > neighborLimit) neighbors.pop();
+    }
 
     const votes = { fresh: 0, rotten: 0 };
     neighbors.forEach(({ sample }) => votes[sample.label]++);
@@ -397,6 +415,7 @@
     return { totals, correct, count };
   }
 
+  // 參考資料生命週期：檢查 localStorage 格式、載入／還原參考曲線並顯示驗證結果。
   function validStoredReference(value) {
     return value &&
       value.version === 1 &&
@@ -572,6 +591,7 @@
         throw localizedError('queryNeedsWavelength', { detail });
       }
 
+      const referenceIndexes = new Map(referenceSet.wavelengths.map((wavelength, index) => [wavelength, index]));
       const results = querySamples.map((sample) => {
         const sharedWavelengths = referenceSet.wavelengths.filter((wavelength) => sample.points.has(wavelength));
         if (sharedWavelengths.length < MIN_SHARED_WAVELENGTHS) {
@@ -583,16 +603,9 @@
             })
           };
         }
+        const sharedIndexes = sharedWavelengths.map((wavelength) => referenceIndexes.get(wavelength));
         const queryVector = sharedWavelengths.map((wavelength) => sample.points.get(wavelength));
-        const alignedReferences = referenceSet.samples.map((reference) => ({
-          ...reference,
-          values: sharedWavelengths.map((wavelength) =>
-            referenceSet.wavelengths.indexOf(wavelength) >= 0
-              ? reference.values[referenceSet.wavelengths.indexOf(wavelength)]
-              : NaN
-          )
-        }));
-        const prediction = predictByNeighbors(queryVector, alignedReferences);
+        const prediction = predictByNeighbors(queryVector, referenceSet.samples, -1, sharedIndexes);
         return { name: sample.name, sharedCount: sharedWavelengths.length, prediction };
       });
 
@@ -611,6 +624,7 @@
     }
   }
 
+  // 瀏覽器事件：連接檔案選取、參考資料管理、語言切換與分類按鈕。
   function escapeHtml(value) {
     return String(value).replace(/[&<>"']/g, (character) => ({
       '&': '&amp;',

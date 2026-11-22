@@ -1,8 +1,10 @@
+# 本機預覽伺服器只綁定回環位址，提供靜態檔案供瀏覽器載入。
 $prefix = 'http://127.0.0.1:5500/'
 $listener = [System.Net.HttpListener]::new()
 $listener.Prefixes.Add($prefix)
 
 try {
+    # 啟動監聽並開啟首頁；工作持續執行直到使用者停止此 PowerShell 工作。
     $listener.Start()
     Write-Host "ChiliScan 預覽伺服器：http://127.0.0.1:5500/"
     Start-Process "http://127.0.0.1:5500/"
@@ -12,6 +14,7 @@ try {
         $requestPath = [Uri]::UnescapeDataString($context.Request.Url.AbsolutePath)
         if ($requestPath -eq '/') { $requestPath = '/index.html' }
 
+        # 正規化請求路徑並確認檔案仍位於專案根目錄，避免讀取專案外的檔案。
         $relativePath = $requestPath.TrimStart('/')
         $root = (Resolve-Path $PSScriptRoot).Path
         $filePath = [System.IO.Path]::GetFullPath((Join-Path $root $relativePath))
@@ -23,6 +26,7 @@ try {
             continue
         }
 
+        # 依副檔名設定瀏覽器 MIME 類型，再回傳檔案位元組。
         $extension = [System.IO.Path]::GetExtension($filePath).ToLowerInvariant()
         $contentTypes = @{
             '.html' = 'text/html; charset=utf-8'
@@ -39,6 +43,7 @@ try {
         $context.Response.Close()
     }
 } finally {
+    # 不論正常停止或發生錯誤，都釋放 HTTP 監聽器資源。
     if ($listener.IsListening) { $listener.Stop() }
     $listener.Close()
 }

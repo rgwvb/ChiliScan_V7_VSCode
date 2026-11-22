@@ -11,7 +11,7 @@
  * 匯入檔案 -> 辨識工作表欄位 -> 篩選波段 -> 選取樣本 -> 計算特徵 -> 繪圖/匯出
  *
  * 注意：
- * 一般分析在訪客瀏覽器中處理；只有使用者明確呼叫 Jetson AI 時才傳送所選光譜。
+ * 一般分析與資料處理都在訪客瀏覽器中進行，不會上傳光譜。
  */
 
 // =====================================================
@@ -21,7 +21,7 @@
 // 1. 保存使用中的 Excel / CSV、工作表、樣本與選取狀態。
 // 2. 提供中英文切換、數值轉換、HTML跳脈防護與格式化工具。
 // 3. 不直接處理 Excel/CSV讀取或畫圖；這些工作交給後面的區塊。
-const $=id=>document.getElementById(id);let crossSpecs=[],crossCache=new Map();let workbook=null,rows=[],headers=[],sourceHeaders=[],widx=-1,series=[],selected=new Set(),hover=null,rawPage=0,demoDataLoaded=false,csvImported=false,replicateSummary={groups:0,measurements:0};let knownLabels=new Map(),jetsonConnection=null,jetsonPhase='idle',jetsonDetail='',jetsonPredictions=[],jetsonReferenceLibrary=[],jetsonReferenceLibraryError='';const jetsonLabels=['fresh','pest','rotten'];const rawPageSize=100;const palette=['#60a5fa','#34d399','#fbbf24','#fb7185','#a78bfa','#22d3ee','#f472b6','#bef264','#f97316','#93c5fd'];
+const $=id=>document.getElementById(id);let crossSpecs=[],crossCache=new Map();let workbook=null,rows=[],headers=[],sourceHeaders=[],widx=-1,series=[],selected=new Set(),hover=null,rawPage=0,demoDataLoaded=false,csvImported=false,replicateSummary={groups:0,measurements:0};const rawPageSize=100;const palette=['#60a5fa','#34d399','#fbbf24','#fb7185','#a78bfa','#22d3ee','#f472b6','#bef264','#f97316','#93c5fd'];
 const staticTranslations={
 'pageTitle':'ChiliScan | Spectral Data Analysis Platform V7',
 'brandSuffix':'/ Spectral Analysis Platform',
@@ -99,10 +99,11 @@ const staticTranslations={
 '請勾選至少一個樣本':'Check at least one sample'
 };
 let currentLanguage=localStorage.getItem('chiliscan-language')||'zh';
+['chiliscan-kumo-reference-library','chiliscan-kumo-api-url','chiliscan-kumo-api-token'].forEach(key=>localStorage.removeItem(key));
 const uiTranslations={
   pageTitle:['ChiliScan｜光譜數據分析平台 V7','ChiliScan | Spectral Data Analysis Platform V7'],
   brandSubtitle:['／ 光譜分析平台','/ Spectral Analysis Platform'],
-  intro:['匯入 Excel / CSV 光譜資料，自動辨識波長欄、繪製樣本曲線，計算指定波段的光譜特徵。一般分析在瀏覽器內進行；只有按下 Kumo AI 判斷時，參考與待測光譜才會送到你設定的安全後端。','Import Excel / CSV spectral data to identify wavelength columns, plot sample curves, and calculate spectral features in a selected band. Routine analysis stays in your browser; reference and query spectra are sent to your configured secure backend only when you request Kumo classification.'],
+  intro:['匯入 Excel / CSV 光譜資料，自動辨識波長欄、繪製樣本曲線，並在瀏覽器內計算指定波段的光譜特徵。','Import Excel / CSV spectral data to identify wavelength columns, plot sample curves, and calculate spectral features for a selected band, all in your browser.'],
   importTitle:['01　匯入光譜資料','01  Import Spectral Data'],
   uploadTitle:['選擇 Excel / CSV，或將檔案拖曳到這裡','Choose an Excel / CSV file, or drag it here'],
   uploadHint:['支援 .xlsx、.xls、.csv。三次量測放在同一工作表不同欄，例如：辣椒1、辣椒2、辣椒3。','Supports .xlsx, .xls, and .csv. Put three measurements in separate columns on one worksheet, e.g. Pepper1, Pepper2, Pepper3.'],
@@ -176,35 +177,6 @@ const uiTranslations={
   rawHint:['依目前起始與結束波長，顯示所有可用樣本的逐波長強度；沒有對應量測值時會留白。資料較多時可使用分頁瀏覽。','Shows each available sample’s intensity by wavelength within the selected range. Missing measurements are blank; use pagination for large datasets.'],
   rawWavelength:['波長 (nm)','Wavelength (nm)'],
   rawWaiting:['匯入資料後顯示波段數據','Band data appears after import'],
-  jetsonTitle:['NVIDIA Kumo-Tabular 光譜 AI 判斷','NVIDIA Kumo-Tabular Spectral AI'],
-  jetsonHint:['勾選的光譜會作為待判斷樣本；未勾選且已標籤的光譜會作為參考資料，送往你設定的安全 API。NVIDIA 金鑰只應放在後端環境變數；ChiliScan 權杖會保存在此瀏覽器以供下次自動連線，請勿在共用裝置使用。','Checked spectra are queries; unchecked spectra with assigned labels are the reference context sent to your configured API. Keep the NVIDIA key only in the backend environment. The ChiliScan token is saved in this browser for automatic reconnection; do not enable this on a shared device.'],
-  jetsonUrlLabel:['安全後端 API 網址（不是 NVIDIA 模型頁）','Secure backend API URL (not the NVIDIA model page)'],
-  jetsonTokenLabel:['ChiliScan API 權杖（不是 NVIDIA 金鑰）','ChiliScan API token (not the NVIDIA key)'],
-  jetsonConnect:['測試 API 連線','Test API Connection'],
-  jetsonPredict:['用 Kumo 判斷勾選的光譜','Classify Selected Spectra with Kumo'],
-  jetsonIdle:['尚未連線。請設定使用 HTTPS 的安全後端 API。','Not connected. Configure a secure backend API using HTTPS.'],
-  jetsonContextHint:['先在未勾選的樣本選單指定已知標籤（新鮮／蟲害／腐爛），再保存到本機參考樣本庫。之後匯入新資料時，已保存的樣本會作為參考；勾選樣本才會被預測。每一類都需至少一筆參考樣本，實驗準確度仍需更多獨立樣本驗證。','Assign known labels (fresh / pest / rotten) to unchecked samples, then save them to this browser’s reference library. Saved samples are reused when you import new data; checked samples are predicted. Each class needs at least one reference; meaningful accuracy still requires more independent samples.'],
-  referenceLibraryHint:['已知樣本標籤後可保存到此瀏覽器；樣本資料只在按下分類時才會傳給安全後端。波長位置必須與待測資料一致。','Save labelled samples in this browser; their data is sent to the secure backend only when you request classification. Wavelength positions must match the query data.'],
-  saveReferences:['保存未勾選且已標記樣本為參考資料','Save unchecked labelled samples as references'],
-  removeReference:['移除','Remove'],
-  referenceLibraryEmpty:['尚未保存參考樣本。','No reference samples saved yet.'],
-  referenceLibrarySaved:['已保存','Saved'],
-  referenceLibraryError:['無法保存本機參考樣本：','Could not save local reference samples: '],
-  referenceLibraryInvalid:['本機參考樣本資料格式無效，請移除網站資料或重新匯入參考樣本。','The local reference library is invalid. Clear this site’s data or re-import reference samples.'],
-  referenceLibraryClass:['筆','sample(s)'],
-  referenceWavelengthMismatch:['參考樣本與待測樣本的波長位置不一致。請使用相同波長資料及分析範圍。','Reference and query wavelength positions do not match. Use the same wavelength positions and analysis range.'],
-  noNewReferences:['目前沒有新的未勾選且已標籤樣本可保存。','There are no new unchecked labelled samples to save.'],
-  referencesSaved:['已更新本機參考樣本庫。','Local reference library updated.'],
-  labelUnknown:['未標記','Unlabelled'],
-  labelFresh:['新鮮','Fresh'],
-  labelPest:['蟲害','Pest'],
-  labelRotten:['腐爛','Rotten'],
-  qualityLabel:['參考標籤','Reference label'],
-  noQuerySpectra:['請勾選至少一個已平均的光譜作為預測樣本。','Check at least one averaged spectrum to classify.'],
-  missingContext:['請在未勾選的樣本中，為新鮮、蟲害、腐爛各指定至少一筆參考標籤。','Assign at least one unchecked reference sample for each class: fresh, pest, and rotten.'],
-  jetsonSample:['樣本','Sample'],
-  jetsonClass:['判斷結果','Classification'],
-  jetsonConfidence:['信心度','Confidence'],
   previous:['上一頁','Previous'],
   next:['下一頁','Next'],
   noData:['尚無數據','No data'],
@@ -239,8 +211,6 @@ function applyLanguage(lang){
    $('wave').value='0';analyze();
    $('status').innerHTML+=`<span class="warning">${lang==='en'?'　Simulated data, not experimental measurements.':'　目前為模擬曲線，並非你的實驗數據。'}</span>`;
  }else if(typeof render==='function')render();
- renderJetsonStatus();
- renderJetsonResults();
 }
 document.querySelectorAll('[data-lang]').forEach(btn=>btn.addEventListener('click',()=>applyLanguage(btn.dataset.lang)));
 function fmt(x,d=2){return Number.isFinite(x)?x.toLocaleString(currentLanguage==='zh'?'zh-TW':'en-US',{maximumFractionDigits:d}):'—'}
@@ -376,307 +346,6 @@ function replicateStatus(){
   :'未偵測到重複量測欄；請確認重複量測使用相同樣本名稱或同一組欄位標題。';
 }
 
-function classificationKey(sample){
- return sample.classificationKey||sample.key||`${sample.sheet||$('sheet').value}::${sample.column}`;
-}
-function inferredLabelFor(sample){
- const sheet=sample.sheet||$('sheet').value;
- if(sheet==='新鮮'||sheet==='新鮮平均')return 'fresh';
- if(sheet==='蟲害'||sheet==='蟲害平均')return 'pest';
- if(sheet==='腐爛'||sheet==='腐爛平均')return 'rotten';
- return '';
-}
-function knownLabelFor(sample){
- const key=classificationKey(sample);
- return knownLabels.has(key)?knownLabels.get(key):inferredLabelFor(sample);
-}
-function selectedJetsonSpectra(){
- const mode=$('replicateMode').value;
- if(mode==='individual')return [];
- return [...selected].map(index=>series[index]).filter(sample=>sample&&sample.data.length&&
-  (mode!=='both'||!sample.replicateIndividual)
- );
-}
-function currentJetsonContext(){
- return series.filter((_,index)=>!selected.has(index)).map(sample=>({
-  sample,
-  label:knownLabelFor(sample)
- })).filter(item=>item.label&&item.sample.data.length);
-}
-const JETSON_REFERENCE_STORAGE_KEY='chiliscan-kumo-reference-library';
-function isValidJetsonReference(item){
- return item&&typeof item.id==='string'&&typeof item.name==='string'&&jetsonLabels.includes(item.label)&&
-  Array.isArray(item.data)&&item.data.length>0&&item.data.every(point=>
-   point&&Number.isFinite(point.w)&&Number.isFinite(point.y)
-  )&&(item.replicates===undefined||(Number.isInteger(item.replicates)&&item.replicates>0));
-}
-function restoreJetsonReferenceLibrary(){
- try{
-  const raw=localStorage.getItem(JETSON_REFERENCE_STORAGE_KEY);
-  if(!raw)return;
-  const parsed=JSON.parse(raw);
-  if(!parsed||parsed.version!==1||!Array.isArray(parsed.samples)||!parsed.samples.every(isValidJetsonReference))
-   throw Error('invalid reference library');
-  jetsonReferenceLibrary=parsed.samples;
- }catch(error){
-  jetsonReferenceLibraryError=currentLanguage==='en'?uiTranslations.referenceLibraryInvalid[1]:uiTranslations.referenceLibraryInvalid[0];
- }
-}
-function persistJetsonReferenceLibrary(samples){
- try{
-  localStorage.setItem(JETSON_REFERENCE_STORAGE_KEY,JSON.stringify({version:1,samples}));
-  jetsonReferenceLibraryError='';
-  return true;
- }catch(error){
-  jetsonReferenceLibraryError=(currentLanguage==='en'?uiTranslations.referenceLibraryError[1]:uiTranslations.referenceLibraryError[0])+(error.message||String(error));
-  return false;
- }
-}
-function referenceFingerprint(sample){
- return JSON.stringify([sample.name,sample.data.map(point=>[point.w,point.y])]);
-}
-function selectedJetsonContext(){
- const library=jetsonReferenceLibrary.map(item=>({
-  sample:{name:item.name,data:item.data,replicates:item.replicates||1},
-  label:item.label
- }));
- const savedSpectra=new Set(library.map(item=>referenceFingerprint(item.sample)));
- return library.concat(currentJetsonContext().filter(item=>!savedSpectra.has(referenceFingerprint(item.sample))));
-}
-function renderJetsonReferenceLibrary(){
- const status=$('jetsonReferenceStatus');
- const list=$('jetsonReferenceList');
- if(!status||!list)return;
- status.textContent=jetsonReferenceLibraryError||(
-  jetsonReferenceLibrary.length
-   ?`${currentLanguage==='en'?'Local reference library':'本機參考樣本庫'}：${jetsonReferenceLibrary.length} ${currentLanguage==='en'?uiTranslations.referenceLibraryClass[1]:uiTranslations.referenceLibraryClass[0]}`
-   :(currentLanguage==='en'?uiTranslations.referenceLibraryEmpty[1]:uiTranslations.referenceLibraryEmpty[0])
- );
- const labelIndex=currentLanguage==='en'?1:0;
- const labelNames={fresh:uiTranslations.labelFresh[labelIndex],pest:uiTranslations.labelPest[labelIndex],rotten:uiTranslations.labelRotten[labelIndex]};
- list.innerHTML=jetsonReferenceLibrary.map(item=>
-  `<div class="reference-sample"><span>${escapeHtml(item.name)} — ${escapeHtml(labelNames[item.label])}</span><button class="mini" type="button" data-remove-reference="${escapeHtml(item.id)}">${currentLanguage==='en'?uiTranslations.removeReference[1]:uiTranslations.removeReference[0]}</button></div>`
- ).join('');
-}
-function saveCurrentJetsonReferences(){
- const current=currentJetsonContext();
- const byFingerprint=new Map(jetsonReferenceLibrary.map(item=>[referenceFingerprint(item),{...item}]));
- let added=0;
- let updated=0;
- current.forEach(({sample,label})=>{
-  const fingerprint=referenceFingerprint(sample);
-  const existing=byFingerprint.get(fingerprint);
-  if(existing){
-   if(existing.label!==label){existing.label=label;updated++}
-   return;
-  }
-  const id=typeof crypto.randomUUID==='function'?crypto.randomUUID():`${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  const item={id,name:sample.name,label,data:sample.data.map(point=>({w:point.w,y:point.y})),replicates:sample.replicates||1};
-  byFingerprint.set(fingerprint,item);
-  added++;
- });
- if(!added&&!updated){
-  jetsonReferenceLibraryError=currentLanguage==='en'?uiTranslations.noNewReferences[1]:uiTranslations.noNewReferences[0];
-  renderJetsonReferenceLibrary();
-  return;
- }
- const next=[...byFingerprint.values()];
- if(!persistJetsonReferenceLibrary(next)){renderJetsonReferenceLibrary();return}
- jetsonReferenceLibrary=next;
- jetsonReferenceLibraryError=currentLanguage==='en'?uiTranslations.referencesSaved[1]:uiTranslations.referencesSaved[0];
- clearJetsonPredictions();
- renderJetsonReferenceLibrary();
- renderJetsonStatus();
-}
-function canClassifyWithJetson(){
- const labels=new Set(selectedJetsonContext().map(item=>item.label));
- return selectedJetsonSpectra().length>0&&jetsonLabels.every(label=>labels.has(label));
-}
-function renderJetsonStatus(){
- const status=$('jetsonStatus');
- if(!status)return;
- const en=currentLanguage==='en';
- const messages={
-  idle:en?'Not connected. Configure a secure backend API using HTTPS.':'尚未連線。請設定使用 HTTPS 的安全後端 API。',
-  checking:en?'Checking the secure API…':'正在測試安全 API 連線…',
-  ready:en?`Connected${jetsonDetail?`: ${jetsonDetail}`:''}. Ready to classify selected spectra.`:`已連線${jetsonDetail?`：${jetsonDetail}`:''}。可以判斷已選光譜。`,
-  'no-model':en?'API is reachable, but NVIDIA Kumo credentials are not configured on the backend. No prediction will be shown.':'API 已連線，但後端尚未設定 NVIDIA Kumo 憑證；不會顯示分類結果。',
-  predicting:en?'Sending reference and selected spectra for Kumo classification…':'正在送出參考與勾選光譜進行 Kumo 分類…',
-  complete:en?`Classification complete: ${jetsonPredictions.length} sample(s).`:`分類完成：${jetsonPredictions.length} 個樣本。`,
-  error:en?`Secure API request failed: ${jetsonDetail}`:`安全 API 連線失敗：${jetsonDetail}`
- };
- status.textContent=messages[jetsonPhase]||messages.idle;
- status.dataset.state=jetsonPhase;
- const context=selectedJetsonContext();
- renderJetsonReferenceLibrary();
- const labelCounts={fresh:0,pest:0,rotten:0};
- context.forEach(item=>{labelCounts[item.label]++});
- const contextHint=$('jetsonContextStatus');
- if(contextHint){
-  contextHint.textContent=en
-   ?`Reference context: ${labelCounts.fresh} fresh, ${labelCounts.pest} pest, ${labelCounts.rotten} rotten.`
-   :`參考資料：新鮮 ${labelCounts.fresh}、蟲害 ${labelCounts.pest}、腐爛 ${labelCounts.rotten} 筆。`;
- }
- const busy=jetsonPhase==='checking'||jetsonPhase==='predicting';
- $('jetsonConnect').disabled=busy;
- $('jetsonUrl').disabled=busy;
- $('jetsonToken').disabled=busy;
- $('saveJetsonReferences').disabled=busy||!currentJetsonContext().length;
- $('jetsonPredict').disabled=busy||!jetsonConnection?.ready||!canClassifyWithJetson();
-}
-function renderJetsonResults(){
- const container=$('jetsonResults');
- if(!container)return;
- container.hidden=!jetsonPredictions.length;
- const labelNames={fresh:uiTranslations.labelFresh[0],pest:uiTranslations.labelPest[0],rotten:uiTranslations.labelRotten[0]};
- $('jetsonResultBody').innerHTML=jetsonPredictions.map(item=>`<tr><td>${escapeHtml(item.sample_name)}</td><td>${escapeHtml(labelNames[item.label]||item.label)}</td><td>${fmt(item.confidence*100,1)}%</td></tr>`).join('');
-}
-function clearJetsonPredictions(){
- jetsonPredictions=[];
- if(jetsonPhase==='complete')jetsonPhase=jetsonConnection?.ready?'ready':jetsonConnection?'no-model':'idle';
- renderJetsonStatus();
- renderJetsonResults();
-}
-function jetsonApiBase(){
- const raw=$('jetsonUrl').value.trim();
- if(!raw)throw Error(currentLanguage==='en'?'Enter the Jetson API URL.':'請輸入 Jetson API 網址。');
- let url;
- try{url=new URL(raw)}catch{throw Error(currentLanguage==='en'?'The Jetson API URL is invalid.':'Jetson API 網址格式不正確。')}
- if(url.hostname==='build.nvidia.com')
-  throw Error(currentLanguage==='en'?'Enter your secure backend API URL, not the NVIDIA model page.':'請輸入你部署的安全後端 API 網址，不是 NVIDIA 模型介紹頁。');
- if(!['https:','http:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)
-  throw Error(currentLanguage==='en'?'Use an HTTP(S) URL without credentials, query, or fragment.':'請使用不含帳密、查詢參數或片段的 HTTP(S) 網址。');
- const localHost=['localhost','127.0.0.1','[::1]'].includes(location.hostname);
- if(url.protocol==='http:'&&url.origin!==location.origin&&!localHost)
-  throw Error(currentLanguage==='en'?'A secure page requires an HTTPS Jetson API.':'安全的 HTTPS 網頁需要使用 HTTPS Jetson API。');
- return url.href.replace(/\/+$/,'');
-}
-async function requestJetson(base,path,options={},timeoutMs=15000){
- const token=$('jetsonToken').value.trim();
- if(!token)throw Error(currentLanguage==='en'?'Enter the access token.':'請輸入存取權杖。');
- const controller=new AbortController();
- const timeout=setTimeout(()=>controller.abort(),timeoutMs);
- try{
-  const response=await fetch(`${base}${path}`,{
-   ...options,
-   headers:{Accept:'application/json',Authorization:`Bearer ${token}`,...options.headers},
-   credentials:'omit',
-   signal:controller.signal
-  });
-  let payload;
-  try{payload=await response.json()}catch{throw Error(currentLanguage==='en'?'The Jetson API returned invalid JSON.':'Jetson API 回傳的 JSON 格式無效。')}
-  if(!response.ok){
-   const message=payload&&typeof payload==='object'?(payload.error||payload.message):'';
-   throw Error(message||`HTTP ${response.status}`);
-  }
-  return payload;
- }catch(error){
-  if(error.name==='AbortError')throw Error(currentLanguage==='en'?'The Jetson API request timed out.':'Jetson API 連線逾時。');
-  throw error;
- }finally{clearTimeout(timeout)}
-}
-async function connectJetson(){
- jetsonConnection=null;jetsonPredictions=[];jetsonDetail='';jetsonPhase='checking';renderJetsonStatus();renderJetsonResults();
- try{
-  const base=jetsonApiBase();
-  const health=await requestJetson(base,'/api/v1/health',{},90000);
-  if(!health||typeof health!=='object'||health.api_version!==1||typeof health.model_ready!=='boolean')throw Error(currentLanguage==='en'?'Unsupported health response.':'Jetson 健康檢查回傳格式不受支援。');
-  jetsonConnection={base,ready:health.model_ready};
-  jetsonDetail=typeof health.model_name==='string'?health.model_name:'';
-  jetsonPhase=health.model_ready?'ready':'no-model';
- }catch(error){jetsonPhase='error';jetsonDetail=error.message||String(error)}
- renderJetsonStatus();
-}
-const JETSON_URL_STORAGE_KEY='chiliscan-kumo-api-url';
-const JETSON_TOKEN_STORAGE_KEY='chiliscan-kumo-api-token';
-function persistJetsonSettings(){
- const url=$('jetsonUrl').value;
- const token=$('jetsonToken').value;
- if(url)localStorage.setItem(JETSON_URL_STORAGE_KEY,url);
- else localStorage.removeItem(JETSON_URL_STORAGE_KEY);
- if(token)localStorage.setItem(JETSON_TOKEN_STORAGE_KEY,token);
- else localStorage.removeItem(JETSON_TOKEN_STORAGE_KEY);
-}
-function restoreJetsonSettings(){
- $('jetsonUrl').value=localStorage.getItem(JETSON_URL_STORAGE_KEY)||'';
- $('jetsonToken').value=localStorage.getItem(JETSON_TOKEN_STORAGE_KEY)||'';
- if($('jetsonUrl').value.trim()&&$('jetsonToken').value.trim())connectJetson();
-}
-async function classifyWithJetson(){
- const spectra=selectedJetsonSpectra();
- const context=selectedJetsonContext();
- if(!jetsonConnection?.ready||!spectra.length||!canClassifyWithJetson())return;
- const wavelengthPositions=context[0].sample.data.map(point=>point.w);
- if(context.some(item=>item.sample.data.length!==wavelengthPositions.length||
-   item.sample.data.some((point,index)=>point.w!==wavelengthPositions[index]))||
-   spectra.some(sample=>sample.data.length!==wavelengthPositions.length||
-   sample.data.some((point,index)=>point.w!==wavelengthPositions[index]))){
-  jetsonPhase='error';
-  jetsonDetail=currentLanguage==='en'?uiTranslations.referenceWavelengthMismatch[1]:uiTranslations.referenceWavelengthMismatch[0];
-  renderJetsonStatus();
-  return;
- }
- jetsonPredictions=[];jetsonDetail='';jetsonPhase='predicting';renderJetsonStatus();renderJetsonResults();
- try{
-  const requestSpectra=spectra.map(sample=>({
-   sample_name:sample.name,
-   wavelengths_nm:sample.data.map(point=>point.w),
-   intensities:sample.data.map(point=>point.y),
-   replicate_count:sample.replicates||1
-  }));
-  const queryNames=new Set(requestSpectra.map(sample=>sample.sample_name));
-  const contextSpectra=context.map(({sample,label},index)=>{
-   let sampleName=`reference_${index+1}`;
-   while(queryNames.has(sampleName))sampleName+='_';
-   queryNames.add(sampleName);
-   return {
-   sample_name:sampleName,
-   label,
-   wavelengths_nm:sample.data.map(point=>point.w),
-   intensities:sample.data.map(point=>point.y),
-   replicate_count:sample.replicates||1
-  }});
-  const result=await requestJetson(jetsonConnection.base,'/api/v1/predict',{
-   method:'POST',
-   headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({api_version:1,context_spectra:contextSpectra,spectra:requestSpectra})
-  });
-  if(!result||typeof result!=='object'||result.api_version!==1||!Array.isArray(result.predictions)||result.predictions.length!==requestSpectra.length)
-   throw Error(currentLanguage==='en'?'Prediction response does not match the request.':'分類回傳筆數與送出樣本不一致。');
-  const predictions=new Map();
-  result.predictions.forEach(item=>{
-   if(!item||typeof item.sample_name!=='string'||typeof item.label!=='string'||!item.label.trim()||
-      !Number.isFinite(item.confidence)||item.confidence<0||item.confidence>1||predictions.has(item.sample_name))
-    throw Error(currentLanguage==='en'?'Prediction response contains invalid fields.':'分類結果欄位格式無效。');
-   predictions.set(item.sample_name,{sample_name:item.sample_name,label:item.label,confidence:item.confidence});
-  });
-  if(requestSpectra.some(sample=>!predictions.has(sample.sample_name)))
-   throw Error(currentLanguage==='en'?'Prediction response is missing a requested sample.':'分類結果缺少送出的樣本。');
-  jetsonPredictions=requestSpectra.map(sample=>predictions.get(sample.sample_name));
-  jetsonPhase='complete';
- }catch(error){jetsonPhase='error';jetsonDetail=error.message||String(error)}
- renderJetsonStatus();
- renderJetsonResults();
-}
-$('jetsonConnect').addEventListener('click',connectJetson);
-$('jetsonPredict').addEventListener('click',classifyWithJetson);
-$('saveJetsonReferences').addEventListener('click',saveCurrentJetsonReferences);
-$('jetsonReferenceList').addEventListener('click',event=>{
- const button=event.target.closest('button[data-remove-reference]');
- if(!button)return;
- const next=jetsonReferenceLibrary.filter(item=>item.id!==button.dataset.removeReference);
- if(!persistJetsonReferenceLibrary(next)){renderJetsonReferenceLibrary();return}
- jetsonReferenceLibrary=next;
- jetsonReferenceLibraryError='';
- clearJetsonPredictions();
- renderJetsonReferenceLibrary();
- renderJetsonStatus();
-});
-['jetsonUrl','jetsonToken'].forEach(id=>$(id).addEventListener('input',()=>{
- jetsonConnection=null;jetsonDetail='';jetsonPhase='idle';clearJetsonPredictions();
- persistJetsonSettings();
-}));
-
 // =====================================================
 // 區塊二：Excel / CSV 讀取與工作表解析
 // =====================================================
@@ -732,7 +401,6 @@ function analyze(){
  if($('compareMode').value==='cross'){analyzeCross();return}
  let from=num($('from').value),to=num($('to').value);
  if(!Number.isFinite(from)||!Number.isFinite(to)||from>=to){$('status').textContent=tStatic('請輸入有效的波長範圍');return}
- clearJetsonPredictions();
  rawPage=0;
  widx=Number($('wave').value);
  const previousSelection=[...selected].map(i=>series[i]).filter(Boolean);
@@ -743,8 +411,7 @@ function analyze(){
  series=extracted.items.map(item=>({
   ...item,
   i:item.column,
-  sheet:$('sheet').value,
-  classificationKey:`${$('sheet').value}::${item.column}`
+  sheet:$('sheet').value
  }));
  series=applyReplicateAveraging(series);
  selected=new Set(series.map((v,i)=>oldNames.size?(oldNames.has(v.name)||oldBases.has(v.baseName)?i:-1):(i<Math.min(3,series.length)?i:-1)).filter(i=>i>=0));
@@ -807,7 +474,6 @@ function analyzeCross(){
  if(!workbook){$('status').textContent=tStatic('請先匯入 Excel 檔案');return}
  const from=num($('from').value),to=num($('to').value);
  if(!Number.isFinite(from)||!Number.isFinite(to)||from>=to){$('status').textContent=tStatic('請輸入有效的波長範圍');return}
- clearJetsonPredictions();
  rawPage=0;
  const chosen=[...document.querySelectorAll('.cross-sheet:checked')].map(el=>el.dataset.sheet);
  const wanted=new Set([...document.querySelectorAll('.cross-sample:checked')].filter(el=>chosen.includes(el.dataset.sheet)).map(el=>el.dataset.sheet+'::'+el.dataset.col));
@@ -818,7 +484,6 @@ function analyzeCross(){
   ...item,
   name:`${name}／${item.name}`,
   baseName:`${name}／${item.baseName}`,
-  classificationKey:item.key,
   data:item.data.filter(p=>p.w>=from&&p.w<=to)
  })).filter(item=>item.data.length));
  series=applyReplicateAveraging(series);
@@ -830,6 +495,7 @@ function analyzeCross(){
  $('crossStatus').textContent=series.length?(currentLanguage==='en'?'Overlaid: '+series.map(s=>s.name).join(', '):'已疊加 '+series.map(s=>s.name).join('、')):(currentLanguage==='en'?'No available samples selected':'尚未選取可用樣本');
  $('all').disabled=!series.length;$('export').disabled=!series.length;$('exportRaw').disabled=!series.length;render();
 }
+// 下列事件將跨工作表控制項連接到分析流程；使用者變更選擇後會重新計算疊加結果。
 $('compareMode').onchange=()=>{const cross=$('compareMode').value==='cross';$('crossControls').hidden=!cross;$('sheet').disabled=cross||!workbook;$('wave').disabled=cross||!workbook;if(cross){if(workbook)populateCross();analyzeCross()}else{if(workbook)parseSheet($('sheet').value);else{series=[];selected.clear();render()}}};
 $('selectRecommended').onclick=()=>{const wanted=new Set(['新鮮平均','蟲害平均','腐爛平均']);document.querySelectorAll('.cross-sheet').forEach(el=>{el.checked=wanted.has(el.dataset.sheet)&&!el.disabled});document.querySelectorAll('.cross-sample').forEach(el=>{let first=true;document.querySelectorAll('.cross-sample').forEach(candidate=>{if(candidate.dataset.sheet===el.dataset.sheet&&!el.checked&&first){first=false}});const isFirst=[...document.querySelectorAll('.cross-sample')].find(candidate=>candidate.dataset.sheet===el.dataset.sheet)===el;el.checked=wanted.has(el.dataset.sheet)&&isFirst});syncCrossReplicateSelections();analyzeCross()};
 $('crossApply').onclick=analyzeCross;
@@ -868,16 +534,12 @@ function render(){
  const first=[...selected][0],f=first===undefined?null:feature(series[first]);
  $('peakW').textContent=f?fmt(f.w,3):'—';$('peakI').textContent=f?fmt(f.max):'—';$('mean').textContent=f?fmt(f.mean):'—';$('points').textContent=f?f.n:'—';
  const onlyLabel=currentLanguage==='en'?'Only':'單獨';
- const labelText=currentLanguage==='en'?['Unlabelled','Fresh','Pest','Rotten']:['未標記','新鮮','蟲害','腐爛'];
- const labels=['','fresh','pest','rotten'];
  $('samples').innerHTML=series.length?series.map((s,i)=>{
-  const key=classificationKey(s),value=knownLabelFor(s);
-  const options=labels.map((label,index)=>`<option value="${label}" ${value===label?'selected':''}>${labelText[index]}</option>`).join('');
-  return `<div class="sample"><label class="sample-select"><input type="checkbox" data-i="${i}" ${selected.has(i)?'checked':''}><span>${escapeHtml(s.name)}</span></label><select class="quality-label" data-quality-key="${escapeHtml(key)}" aria-label="${currentLanguage==='en'?'Reference label':'參考標籤'}">${options}</select><button class="mini" data-only="${i}" type="button">${onlyLabel}</button></div>`;
+  return `<div class="sample"><label class="sample-select"><input type="checkbox" data-i="${i}" ${selected.has(i)?'checked':''}><span>${escapeHtml(s.name)}</span></label><button class="mini" data-only="${i}" type="button">${onlyLabel}</button></div>`;
  }).join(''):(currentLanguage==='en'?'<div class="empty">No drawable samples</div>':'<div class="empty">沒有可繪製的樣本</div>');
  $('legend').innerHTML=[...selected].map(i=>`<label><i style="background:${palette[i%palette.length]}"></i>${escapeHtml(series[i].name)}</label>`).join('');
  $('tbody').innerHTML=series.length?series.map(s=>{const f=feature(s);return f?`<tr><td>${escapeHtml(f.name)}</td><td>${fmt(f.w,3)}</td><td>${fmt(f.max)}</td><td>${fmt(f.mean)}</td><td>${fmt(f.min)}</td><td>${f.n}</td></tr>`:''}).join(''):(currentLanguage==='en'?'<tr><td colspan="6">No data</td></tr>':'<tr><td colspan="6">沒有資料</td></tr>');
- renderRawData();draw();renderJetsonStatus()
+ renderRawData();draw()
 }
 // 將目前波段內所有樣本整理成逐波長表格，最多每頁顯示100筆。
 function renderRawData(){
@@ -904,14 +566,11 @@ $('samples').addEventListener('change',e=>{
  if(e.target.matches('input[data-i]')){
   const i=Number(e.target.dataset.i);
   e.target.checked?selected.add(i):selected.delete(i);
-  clearJetsonPredictions();render();
- }else if(e.target.matches('select[data-quality-key]')){
-  knownLabels.set(e.target.dataset.qualityKey,e.target.value);
-  clearJetsonPredictions();render();
+  render();
  }
 });
-$('samples').addEventListener('click',e=>{if(e.target.dataset.only!==undefined){selected=new Set([Number(e.target.dataset.only)]);clearJetsonPredictions();render()}});
-$('all').onclick=()=>{selected=selected.size===series.length?new Set():new Set(series.map((_,i)=>i));clearJetsonPredictions();render()};
+$('samples').addEventListener('click',e=>{if(e.target.dataset.only!==undefined){selected=new Set([Number(e.target.dataset.only)]);render()}});
+$('all').onclick=()=>{selected=selected.size===series.length?new Set():new Set(series.map((_,i)=>i));render()};
 // draw：Canvas繪圖入口，負責座標軸、刻度、曲線平滑、Y軸縮放與游標提示。
 function draw(){const c=$('chart'),r=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1;c.width=Math.max(300,Math.round(r.width*dpr));c.height=Math.max(220,Math.round(r.height*dpr));const ctx=c.getContext('2d');ctx.scale(dpr,dpr);const W=c.width/dpr,H=c.height/dpr;ctx.clearRect(0,0,W,H);const L=62,R=18,T=20,B=44,pw=W-L-R,ph=H-T-B;ctx.font='12px sans-serif';ctx.textBaseline='middle';const vis=[...selected].map(i=>({s:series[i],i})).filter(o=>o.s&&o.s.data.length);if(!vis.length){ctx.fillStyle='#91a5bc';ctx.textAlign='center';ctx.fillText(currentLanguage==='en'?'Check at least one sample':'請勾選至少一個樣本',W/2,H/2);return}const x0=Number($('from').value),x1=Number($('to').value);let vals=vis.flatMap(o=>o.s.data.map(p=>p.y));const dataMin=Math.min(...vals),dataMax=Math.max(...vals);let y0=Math.min(0,dataMin),y1=Math.max(0,dataMax);if(y0===y1)y1=y0+1;let pad=(y1-y0)*.07;y0-=pad;y1+=pad;if(dataMin>=0)y0=0;else if(dataMax<=0)y1=0;if($('ymode').value==='manual'){const low=num($('ymin').value),high=num($('ymax').value);if(Number.isFinite(low)&&Number.isFinite(high)&&low<high){y0=low;y1=high;$('yerror').style.display='none'}else{$('yerror').textContent=currentLanguage==='en'?'Y-axis minimum must be less than maximum, and both values must be numbers. Auto scale is shown for now.':'Y軸最小值必須小於最大值，且兩者皆需填寫數字；目前暫以自動刻度顯示。';$('yerror').style.display='block'}}else{$('yerror').style.display='none'}const X=v=>L+(v-x0)/(x1-x0)*pw,Y=v=>T+(y1-v)/(y1-y0)*ph;ctx.lineWidth=1;ctx.strokeStyle='#314255';ctx.fillStyle='#9eb1c8';ctx.textAlign='right';for(let i=0;i<=5;i++){let y=T+ph*i/5;ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(W-R,y);ctx.stroke();ctx.fillText(fmt(y1-(y1-y0)*i/5,0),L-10,y)}ctx.textAlign='center';const requestedStep=num($('xstep').value);const step=Number.isFinite(requestedStep)&&requestedStep>0?requestedStep:(x1-x0)/6;const tickCount=Math.floor((x1-x0)/step)+1;if(tickCount>150){$('status').textContent=currentLanguage==='en'?'X-axis ticks are too dense; increase the tick spacing.':'X軸刻度過密，請調大刻度間距';}const safeStep=tickCount>150?(x1-x0)/6:step;let ticks=[];const start=Math.ceil((x0-1e-9)/safeStep)*safeStep;for(let v=start,n=0;v<=x1+1e-8&&n<151;v+=safeStep,n++)ticks.push(Number(v.toFixed(9)));if(!ticks.length)ticks=[x0,x1];const labelStride=Math.max(1,Math.ceil(ticks.length/Math.max(2,Math.floor(pw/62))));ticks.forEach((v,i)=>{let x=X(v);ctx.beginPath();ctx.moveTo(x,T);ctx.lineTo(x,T+ph);ctx.stroke();if(i%labelStride===0)ctx.fillText(fmt(v,2),x,H-23)});vis.forEach(({s,i})=>{ctx.beginPath();ctx.strokeStyle=palette[i%palette.length];ctx.lineWidth=2.4;const n=Number($('smooth').value);const pts=s.data.map((p,j)=>{if(n===1)return p;let half=Math.floor(n/2),part=s.data.slice(Math.max(0,j-half),Math.min(s.data.length,j+half+1));return {w:p.w,y:part.reduce((a,b)=>a+b.y,0)/part.length}});pts.forEach((p,j)=>j?ctx.lineTo(X(p.w),Y(p.y)):ctx.moveTo(X(p.w),Y(p.y)));ctx.stroke()});if(hover!==null&&hover>=L&&hover<=W-R){let wave=x0+(hover-L)/pw*(x1-x0);ctx.strokeStyle='#b9c9dc';ctx.setLineDash([4,5]);ctx.beginPath();ctx.moveTo(hover,T);ctx.lineTo(hover,T+ph);ctx.stroke();ctx.setLineDash([]);let text=vis.slice(0,4).map(({s})=>{let p=s.data.reduce((a,b)=>Math.abs(b.w-wave)<Math.abs(a.w-wave)?b:a);return `${s.name}: ${fmt(p.y)} @ ${fmt(p.w,2)} nm`});let boxW=Math.min(W-20,Math.max(155,...text.map(s=>ctx.measureText(s).width+18)));let bx=Math.min(Math.max(hover+10,8),W-boxW-8),by=T+10;ctx.fillStyle='#24364a';ctx.fillRect(bx,by,boxW,22+text.length*18);ctx.fillStyle='#fff';ctx.textAlign='left';ctx.fillText(`${currentLanguage==='en'?'Cursor':'游標位置'} ${fmt(wave,2)} nm`,bx+9,by+13);text.forEach((s,i)=>ctx.fillText(s,bx+9,by+32+i*18))}}
 $('smooth').addEventListener('change',draw);$('ymode').addEventListener('change',()=>{const manual=$('ymode').value==='manual';$('ymin').disabled=!manual;$('ymax').disabled=!manual;if(manual){const vals=[...selected].flatMap(i=>(series[i]?.data||[]).map(p=>p.y));if(vals.length){const lo=Math.min(0,...vals),hi=Math.max(...vals),pad=Math.max(1,(hi-lo)*.07);if(!$('ymin').value)$('ymin').value=String(Math.floor(lo-pad));if(!$('ymax').value)$('ymax').value=String(Math.ceil(hi+pad))}}draw()});['ymin','ymax'].forEach(id=>$(id).addEventListener('input',draw));$('yreset').addEventListener('click',()=>{$('ymode').value='auto';$('ymin').value='';$('ymax').value='';$('ymin').disabled=true;$('ymax').disabled=true;draw()});$('chart').addEventListener('mousemove',e=>{hover=e.clientX-$('chart').getBoundingClientRect().left;draw()});$('chart').addEventListener('mouseleave',()=>{hover=null;draw()});window.addEventListener('resize',draw);
@@ -954,4 +613,4 @@ $('demo').onclick=()=>{demoDataLoaded=true;headers=currentLanguage==='en'?['Wave
 // 區塊六：CSV匯出
 // =====================================================
 // export：特徵與原始數據分開匯出，避免把統計值與逐波長原始值混在同一份檔案。
-function csvEscape(v){let s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}function downloadCsv(name,data){const text='\ufeff'+data.map(row=>row.map(csvEscape).join(',')).join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}$('export').onclick=()=>{const headers=currentLanguage==='en'?['Sample Name','Peak Wavelength(nm)','Peak Intensity','Mean Intensity','Minimum Intensity','Measurement Points']:['樣本名稱','波峰波長(nm)','波峰強度','平均強度','最低強度','量測點數'];downloadCsv(currentLanguage==='en'?'ChiliScan_Spectral_Features.csv':'ChiliScan_光譜特徵.csv',[headers,...series.map(s=>{const f=feature(s);return [f.name,f.w,f.max,f.mean,f.min,f.n]})])};$('exportRaw').onclick=()=>{const picked=[...selected].map(i=>series[i]).filter(Boolean);if(!picked.length){alert(currentLanguage==='en'?'Please select at least one sample':'請先勾選樣本');return}let wavelengths=[...new Set(picked.flatMap(s=>s.data.map(p=>p.w)))].sort((a,b)=>a-b);downloadCsv(currentLanguage==='en'?'ChiliScan_Selected_Band.csv':'ChiliScan_選定波段.csv',[[(currentLanguage==='en'?'Wavelength(nm)':'波長(nm)'),...picked.map(s=>s.name)],...wavelengths.map(w=>[w,...picked.map(s=>s.data.find(p=>p.w===w)?.y??'')])])};restoreJetsonReferenceLibrary();applyLanguage(currentLanguage);draw();renderJetsonReferenceLibrary();restoreJetsonSettings();
+function csvEscape(v){let s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}function downloadCsv(name,data){const text='\ufeff'+data.map(row=>row.map(csvEscape).join(',')).join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}$('export').onclick=()=>{const headers=currentLanguage==='en'?['Sample Name','Peak Wavelength(nm)','Peak Intensity','Mean Intensity','Minimum Intensity','Measurement Points']:['樣本名稱','波峰波長(nm)','波峰強度','平均強度','最低強度','量測點數'];downloadCsv(currentLanguage==='en'?'ChiliScan_Spectral_Features.csv':'ChiliScan_光譜特徵.csv',[headers,...series.map(s=>{const f=feature(s);return [f.name,f.w,f.max,f.mean,f.min,f.n]})])};$('exportRaw').onclick=()=>{const picked=[...selected].map(i=>series[i]).filter(Boolean);if(!picked.length){alert(currentLanguage==='en'?'Please select at least one sample':'請先勾選樣本');return}let wavelengths=[...new Set(picked.flatMap(s=>s.data.map(p=>p.w)))].sort((a,b)=>a-b);downloadCsv(currentLanguage==='en'?'ChiliScan_Selected_Band.csv':'ChiliScan_選定波段.csv',[[(currentLanguage==='en'?'Wavelength(nm)':'波長(nm)'),...picked.map(s=>s.name)],...wavelengths.map(w=>[w,...picked.map(s=>s.data.find(p=>p.w===w)?.y??'')])])};applyLanguage(currentLanguage);draw();

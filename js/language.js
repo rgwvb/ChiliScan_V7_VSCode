@@ -1,4 +1,7 @@
 (() => {
+  // 舊版通用翻譯工具：若頁面載入本檔，會翻譯 DOM 與 Canvas 文字；
+  // 目前首頁和判斷頁分別在 app.js、classifier.js 管理語言，沒有載入本檔。
+  // 中文原文與英文對照表；翻譯器依目前語言選擇正向或反向配對。
   const translations = {
     '／ 光譜分析平台': '/ Spectral Analysis Platform',
     '匯入 Excel / CSV 光譜資料，自動辨識波長欄、繪製樣本曲線，計算指定波段的光譜特徵。所有分析在瀏覽器內進行，不會上傳資料至伺服器。': 'Import Excel / CSV spectrum data to detect wavelength columns, plot sample curves, and calculate spectral features in a selected range. All analysis runs in your browser; no data is uploaded.',
@@ -94,6 +97,7 @@
   let language = localStorage.getItem('chiliscan-language') === 'en' ? 'en' : 'zh';
   let updating = false;
 
+  // 文字節點及提示屬性使用同一份對照表；動態新增的節點由觀察器補做翻譯。
   function translateText(text) {
     const entries = language === 'en' ? englishEntries : chineseEntries;
     for (const [source, target] of entries) text = text.split(source).join(target);
@@ -150,6 +154,7 @@
     window.dispatchEvent(new Event('languagechange'));
   }
 
+  // 建立切換按鈕並放入頁首；選擇會寫入 localStorage，供下一次開頁還原。
   const header = document.querySelector('header');
   const tag = header.querySelector('.tag');
   const actions = document.createElement('div');
@@ -169,6 +174,7 @@
   style.textContent = '.header-actions{display:flex;align-items:center;gap:9px}.language-switch{display:inline-flex;padding:3px;background:#101b29;border:1px solid #304057;border-radius:9px}.language-switch button{border:0;background:transparent;color:#9caec2;padding:7px 9px;border-radius:6px;font:inherit;font-size:12px;cursor:pointer}.language-switch button[aria-pressed=true]{background:#3cb996;color:#071c18;font-weight:700}@media(max-width:520px){header{align-items:flex-start;gap:12px}.header-actions{flex-wrap:wrap;justify-content:flex-end}.brand{font-size:19px}}';
   document.head.append(style);
 
+  // Canvas 文字不屬於 DOM 節點，因此在繪圖時攔截 fillText 套用相同翻譯。
   const originalFillText = CanvasRenderingContext2D.prototype.fillText;
   CanvasRenderingContext2D.prototype.fillText = function (text, ...args) {
     return originalFillText.call(this, translateText(String(text)), ...args);
