@@ -6,51 +6,61 @@
 
   // 本模組處理新鮮／腐爛吸光度頁：讀取參考與待測檔、計算 RMSE 相對相似度並更新畫面。
   // 光譜處理與分類都在瀏覽器執行，不會上傳資料。
-  const BAND_MIN = 620;
-  const BAND_MAX = 680;
+  const BAND_MIN = 600;
+  const BAND_MAX = 660;
   const MIN_SHARED_WAVELENGTHS = 40;
+  const REFERENCE_VERSION = 3;
+  const CLASS_LABELS = ['fresh', 'pest', 'rotten'];
   const STORAGE_KEY = 'chiliscan-absorbance-binary-reference-v1';
   // 頁面各狀態訊息的繁中與英文版本集中在此，方便切換語言時重新顯示動態內容。
   const messages = {
-    pageTitle: ['ChiliScan｜吸光度新鮮／腐爛判斷', 'ChiliScan | Absorbance Fresh / Rotten Classification'],
-    brandSuffix: ['／ 新鮮・腐爛判斷', '/ Fresh / Rotten Classification'],
+    pageTitle: ['ChiliScan｜三類品質初步篩選實驗版', 'ChiliScan | Three-Class Preliminary Screening Experiment'],
+    brandSuffix: ['／ 三類品質初步篩選實驗版', '/ Three-Class Preliminary Screening Experiment'],
     backToSpectrum: ['返回光譜分析', 'Back to Spectral Analysis'],
+    factoryIncomplete: ['工廠端改版尚未完成資料追溯與量測檢查，請勿用於實際工廠判定。', 'The factory redesign lacks complete data traceability and measurement checks. Do not use it for factory decisions.'],
     intro: [
-      '使用 620–680 nm 吸光度參考曲線進行本機比對。資料只在此瀏覽器處理，不會上傳；此功能為實驗版，結果不是已驗證的食品安全判定。',
-      'Compare absorbance spectra against reference curves at 620–680 nm. Data is processed in this browser and is not uploaded. This experimental feature is not a validated food-safety assessment.'
+      '使用 600–660 nm 衍生吸光度參考曲線進行新鮮、蟲害與腐爛比對。所有結果都需要人工複核，尚未完成獨立驗證；資料只在此瀏覽器處理，不能作為食品安全或產品放行依據。',
+      'Compare derived absorbance spectra at 600–660 nm against fresh, pest-damaged and rotten references. All results require manual review; independent validation is incomplete. Data stays in this browser. Do not use results for food-safety or product-release decisions.'
     ],
     referenceTitle: ['01　載入參考資料（首次使用或更新時）', '01  Load Reference Data (first use or when updating)'],
     referenceHint: [
-      '選擇含「新鮮」與「腐爛」兩個工作表的吸光度參考檔。載入後會儲存在此瀏覽器，之後可直接上傳待測資料。',
-      'Choose an absorbance reference file with “Fresh” and “Rotten” worksheets. The data is saved in this browser so you can upload query data later.'
+      '選擇含「新鮮」、「蟲害」與「腐爛」工作表的衍生吸光度參考檔，資料會儲存在此瀏覽器。每類至少 3 筆、至少 40 個共同波長是程式條件，不是驗證標準。',
+      'Choose a derived-absorbance reference file with Fresh, Pest and Rotten worksheets. It is saved in this browser. At least 3 samples per class and 40 shared wavelengths are program requirements, not validated standards.'
     ],
-    chooseReference: ['選擇新鮮／腐爛吸光度參考檔', 'Choose Fresh / Rotten Absorbance Reference File'],
+    chooseReference: ['選擇三類衍生吸光度參考檔', 'Choose Three-Class Derived Absorbance Reference File'],
     fileTypes: ['支援 .xlsx、.xls、.csv', 'Supports .xlsx, .xls, and .csv'],
     loadReference: ['載入並儲存參考資料', 'Load and Save Reference Data'],
+    referenceVersion: ['參考資料版本（使用者提供）', 'Reference data version (provided by user)'],
+    referenceCorrection: ['參考資料校正方式（使用者確認）', 'Reference correction method (confirmed by user)'],
+    queryCorrection: ['待測資料校正方式（使用者確認）', 'Query correction method (confirmed by user)'],
+    chooseCorrection: ['請選擇', 'Choose a method'],
+    whiteCorrection: ['白板比值，未做暗訊號校正', 'White-reference ratio, no dark correction'],
+    darkCorrection: ['白板與暗訊號校正', 'White and dark correction'],
     clearReference: ['清除本機參考資料', 'Clear Local Reference Data'],
     referenceNotLoaded: ['尚未載入參考資料。', 'Reference data has not been loaded.'],
     queryTitle: ['02　上傳待測資料', '02  Upload Query Data'],
     queryHint: [
-      '每個工作表需有「波長 (nm)」欄；只比對 620–680 nm。樣本可用一欄已平均光譜，或在樣本名稱下放多組「波長／光強」重複量測欄，系統會先依波長平均光強。原始光強資料還需在同一工作表含「標準白」欄，再換算吸光度 A = −log10(樣本平均光強／標準白光強度)。只有數值、沒有波長欄的矩陣無法比對。',
-      'Each worksheet needs a “Wavelength (nm)” column; only 620–680 nm is compared. Use one column for an averaged spectrum, or place repeated “wavelength / intensity” measurements under a sample name; intensities are averaged by wavelength. Raw intensity data also needs a “White Reference” column on the same worksheet to calculate absorbance A = −log10(mean sample intensity / white reference intensity). A matrix without wavelength values cannot be compared.'
+      '每個工作表需有「波長 (nm)」欄，只比對 600–660 nm。原始光強需有「標準白」欄；選擇暗訊號校正時也需要「暗訊號」欄。以校正後的比值 R 計算衍生吸光度 A = −log10(R)，並確認參考與待測資料校正方式一致。',
+      'Each worksheet needs a wavelength column; only 600–660 nm is compared. Raw intensity requires a white reference, and dark correction also requires a dark signal. Derived absorbance is A = −log10(R); confirm that reference and query correction methods match.'
     ],
     chooseQuery: ['選擇待測 Excel／CSV', 'Choose Query Excel / CSV'],
     queryFilePlaceholder: ['可包含一個或多個待測樣本', 'One or more query samples can be included'],
     queryModeLabel: ['待測資料格式', 'Query Data Format'],
     modeAuto: ['自動：有標準白欄就換算，否則視為吸光度', 'Auto: Convert if a white reference column exists; otherwise treat as absorbance'],
-    modeAbsorbance: ['已是吸光度', 'Already Absorbance'],
+    modeAbsorbance: ['已是衍生吸光度', 'Already Derived Absorbance'],
     modeIntensity: ['原始光強（需有標準白欄）', 'Raw Intensity (requires a white reference column)'],
-    classify: ['比對新鮮／腐爛', 'Classify Fresh / Rotten'],
+    modeIntensityDark: ['原始光強（需有標準白及暗訊號欄）', 'Raw Intensity (requires white and dark reference columns)'],
+    classify: ['比對三類參考資料', 'Compare Three Reference Classes'],
     queryWaiting: ['請先載入參考資料，再選擇待測檔案。', 'Load reference data, then choose a query file.'],
     resultsTitle: ['03　比對結果', '03  Classification Results'],
     referenceLoading: ['正在載入參考資料…', 'Loading reference data…'],
     referenceLoaded: [
-      '已載入並儲存：新鮮 {freshCount} 筆、腐爛 {rottenCount} 筆；共同有效波長 {wavelengthCount} 點（{bandMin}–{bandMax} nm）。{ignoredNotice}',
-      'Loaded and saved: {freshCount} fresh and {rottenCount} rotten samples; {wavelengthCount} shared valid wavelengths ({bandMin}–{bandMax} nm). {ignoredNotice}'
+      '參考資料版本：{dataVersion}；校正方式：{correction}。已載入新鮮 {freshCount} 筆、蟲害 {pestCount} 筆、腐爛 {rottenCount} 筆；共同有效波長 {wavelengthCount} 點（{bandMin}–{bandMax} nm）。{ignoredNotice}',
+      'Reference version: {dataVersion}; correction: {correction}. Loaded {freshCount} fresh, {pestCount} pest-damaged and {rottenCount} rotten samples; {wavelengthCount} shared valid wavelengths ({bandMin}–{bandMax} nm). {ignoredNotice}'
     ],
     referenceRestored: [
-      '已從此瀏覽器載入參考資料：新鮮 {freshCount} 筆、腐爛 {rottenCount} 筆；共同有效波長 {wavelengthCount} 點。',
-      'Reference data loaded from this browser: {freshCount} fresh and {rottenCount} rotten samples; {wavelengthCount} shared valid wavelengths.'
+      '已從此瀏覽器載入參考資料版本 {dataVersion}；校正方式：{correction}。新鮮 {freshCount} 筆、蟲害 {pestCount} 筆、腐爛 {rottenCount} 筆；共同有效波長 {wavelengthCount} 點。',
+      'Reference version {dataVersion} loaded from this browser; correction: {correction}. {freshCount} fresh, {pestCount} pest-damaged and {rottenCount} rotten samples; {wavelengthCount} shared valid wavelengths.'
     ],
     ignoredSheetsNotice: ['未使用工作表：{names}。', 'Ignored worksheets: {names}.'],
     referenceCleared: ['已清除此瀏覽器儲存的參考資料。', 'Reference data saved in this browser has been cleared.'],
@@ -59,22 +69,26 @@
     referenceClearFailed: ['無法清除參考資料：{detail}', 'Could not clear reference data: {detail}'],
     referenceStorageError: ['參考資料無法儲存到此瀏覽器：{detail}', 'Could not save reference data in this browser: {detail}'],
     validationStatus: [
-      '留一樣本測試（依兩類最近 RMSE 相似度判斷）：整體 {correct}/{count}（{accuracy}%）；新鮮 {freshCorrect}/{freshCount}（{freshRate}%），腐爛 {rottenCorrect}/{rottenCount}（{rottenRate}%）。這只是目前參考資料的內部測試，不代表外部準確率。',
-      'Leave-one-out validation (nearest-class RMSE similarity): overall {correct}/{count} ({accuracy}%); fresh {freshCorrect}/{freshCount} ({freshRate}%), rotten {rottenCorrect}/{rottenCount} ({rottenRate}%). This is an internal test of the current reference data, not an external accuracy result.'
+      '參考資料留一內部測試：{correct}/{count}；新鮮 {freshCorrect}/{freshCount}、蟲害 {pestCorrect}/{pestCount}、腐爛 {rottenCorrect}/{rottenCount}。尚未完成獨立驗證。',
+      'Internal leave-one-out reference test: {correct}/{count}; fresh {freshCorrect}/{freshCount}, pest {pestCorrect}/{pestCount}, rotten {rottenCorrect}/{rottenCount}. Independent validation has not been completed.'
     ],
     resultWarning: [
-      '參考資料留一交叉驗證：整體準確率 {correct}/{count}（{accuracy}%）；新鮮辨識率 {freshCorrect}/{freshCount}（{freshRate}%），腐爛辨識率 {rottenCorrect}/{rottenCount}（{rottenRate}%）。卡片百分比是依兩類最近參考光譜 RMSE 換算的相對相似度，不是單筆準確率或機率；結果不可單獨作為食品安全依據。',
-      'Reference leave-one-out validation: overall accuracy {correct}/{count} ({accuracy}%); fresh detection {freshCorrect}/{freshCount} ({freshRate}%), rotten detection {rottenCorrect}/{rottenCount} ({rottenRate}%). Card percentages are relative similarities derived from the nearest reference RMSE for each class, not per-sample accuracy or probability. Do not rely on them alone for food-safety decisions.'
+      '各類以最近 RMSE 的倒數正規化為相對相似度；零距離類別平均分配 100%。數值不是準確率或機率。尚未建立接近程度的判定門檻，所有結果均須人工複核；尚未完成獨立驗證。',
+      'Relative similarity normalizes inverse nearest-class RMSE; classes with zero distance share 100% equally. It is not accuracy or probability. No closeness threshold has been established, so every result requires manual review. Independent validation has not been completed.'
     ],
     missingWavelengthHeader: ['{sheet}：找不到「波長」欄位標題。', '{sheet}: wavelength column header not found.'],
     intensityNeedsWhite: ['{sheet}：原始光強資料必須在同一工作表包含「標準白」欄。', '{sheet}: raw intensity data requires a “White Reference” column on the same worksheet.'],
-    referenceMustBeAbsorbance: ['{sheet}：參考檔應是已換算的吸光度資料，不要再含標準白光強欄。', '{sheet}: reference data must already be converted to absorbance and must not contain a white-reference intensity column.'],
+    intensityNeedsDark: ['{sheet}：白板與暗訊號校正需要「暗訊號」欄。', '{sheet}: white and dark correction requires a dark-reference column.'],
+    correctionRequired: ['請填寫參考資料版本並選擇校正方式。', 'Provide a reference data version and select its correction method.'],
+    incompatibleCorrection: ['請確認待測與參考資料使用相同校正方式；自動模式無法確認方法，請改用明確格式。', 'Confirm the query and references use the same correction method. Auto mode cannot establish provenance; choose an explicit format.'],
+    referenceMustBeAbsorbance: ['{sheet}：參考檔應是已換算的衍生吸光度，不要含標準白或暗訊號光強欄。', '{sheet}: reference data must be precomputed derived absorbance without white or dark intensity columns.'],
     noSampleColumn: ['{sheet}：沒有可用的樣本欄。', '{sheet}: no usable sample column found.'],
     duplicateWavelength: ['{sheet}：{wavelength} nm 有重複波長。', '{sheet}: duplicate wavelength {wavelength} nm.'],
-    noUsableSampleValues: ['{sheet}：沒有找到 620–680 nm 的可用樣本數值。', '{sheet}: no usable sample values found in 620–680 nm.'],
+    mismatchedWavelengths: ['{sheet}：重複量測的波長欄不一致，無法依列號平均；請先依實際波長整理資料。', '{sheet}: replicate wavelength columns differ and cannot be averaged by row; align the data by actual wavelength first.'],
+    noUsableSampleValues: ['{sheet}：沒有找到 600–660 nm 的可用樣本數值。', '{sheet}: no usable sample values found in 600–660 nm.'],
     minimumClassSamples: [
-      '至少需要新鮮、腐爛各 3 個參考樣本；目前為 {freshCount} 個新鮮、{rottenCount} 個腐爛。',
-      'At least 3 fresh and 3 rotten reference samples are required; currently there are {freshCount} fresh and {rottenCount} rotten.'
+      '參考資料不足／無法判定：每類至少 3 筆；目前新鮮 {freshCount}、蟲害 {pestCount}、腐爛 {rottenCount}。',
+      'Insufficient reference data / unable to classify: at least 3 samples per class are required; currently fresh {freshCount}, pest {pestCount}, rotten {rottenCount}.'
     ],
     minimumCommonWavelengths: [
       '所有參考樣本共同有效波長只有 {count} 點，至少需要 {minimum} 點。',
@@ -85,6 +99,10 @@
       'Spectrum values are too large to compute RMSE similarity.'
     ],
     invalidStoredReference: ['本機參考資料格式無效，請重新載入參考檔。', 'Local reference data is invalid. Reload the reference file.'],
+    outdatedStoredReference: [
+      '舊版參考資料無法用於三類比對，請重新載入涵蓋 600–660 nm 的三類原始參考檔。',
+      'Previous reference data cannot be used for three-class comparison. Reload a three-class reference file covering 600–660 nm.'
+    ],
     queryProcessing: ['正在本機讀取並比對吸光度資料…', 'Reading and comparing absorbance data in this browser…'],
     queryFileReady: ['待測檔案已選擇，可開始比對。', 'Query file selected. Ready to classify.'],
     queryNoSamples: ['沒有找到可用的待測樣本欄。', 'No usable query sample columns found.'],
@@ -101,18 +119,21 @@
       'Only {count} shared valid wavelengths; at least {minimum} are required.'
     ],
     queryComplete: [
-      '完成：{classified}/{total} 個樣本可比對；{insufficient} 個樣本資料不足。全程在此瀏覽器處理。{ignoredNotice}',
-      'Complete: {classified}/{total} samples classified; {insufficient} had insufficient data. All processing stays in this browser. {ignoredNotice}'
+      '完成：{classified}/{total} 個樣本可比對，均需人工複核；{insufficient} 個樣本資料不足。全程在此瀏覽器處理。{ignoredNotice}',
+      'Complete: {classified}/{total} samples compared, all require manual review; {insufficient} had insufficient data. All processing stays in this browser. {ignoredNotice}'
     ],
     queryFailed: ['無法判斷：{detail}', 'Classification failed: {detail}'],
     fresh: ['新鮮', 'Fresh'],
+    pest: ['蟲害', 'Pest-damaged'],
     rotten: ['腐爛', 'Rotten'],
     cannotClassify: ['無法判斷', 'Unable to classify'],
-    provisionalLabel: ['較相似類別：{label}', 'Closer match: {label}'],
+    provisionalLabel: ['需人工複核；最接近參考類別：{label}', 'Manual review required; nearest reference class: {label}'],
     similarityTitle: ['相對相似度（不是準確率／機率）', 'Relative similarity (not accuracy / probability)'],
     freshSimilarity: ['新鮮：{rate}%', 'Fresh: {rate}%'],
+    pestSimilarity: ['蟲害：{rate}%', 'Pest-damaged: {rate}%'],
     rottenSimilarity: ['腐爛：{rate}%', 'Rotten: {rate}%'],
-    sharedWavelengths: ['有效共同波長：{count}/{total} 點', 'Shared valid wavelengths: {count}/{total} points']
+    sharedWavelengths: ['有效共同波長：{count}/{total} 點', 'Shared valid wavelengths: {count}/{total} points'],
+    partialWavelengths: ['部分波長缺失或無效，未納入比對，請檢查原始資料與校正欄位。', 'Some wavelengths were missing or invalid and were excluded; check the input and correction columns.']
   };
   let language = localStorage.getItem('chiliscan-language') === 'en' ? 'en' : 'zh';
   const $ = (id) => document.getElementById(id);
@@ -215,6 +236,10 @@
     return /標準白|白光|white\s*(reference|ref)?/i.test(String(value || ''));
   }
 
+  function isDarkHeader(value) {
+    return /暗訊號|暗電流|dark\s*(reference|signal|ref)?/i.test(String(value || ''));
+  }
+
   function isMetadataHeader(value) {
     return /積分|integration|時間|備註|quality|標籤|sample[_ ]?id/i.test(String(value || ''));
   }
@@ -249,12 +274,13 @@
 
   function classifySheetName(name) {
     if (/新鮮|fresh/i.test(name)) return 'fresh';
+    if (/蟲害|pest/i.test(name)) return 'pest';
     if (/腐爛|腐敗|rotten/i.test(name)) return 'rotten';
     return '';
   }
 
   function labelName(label) {
-    return label === 'fresh' ? formatMessage('fresh') : formatMessage('rotten');
+    return formatMessage(label);
   }
 
   function readSpectraFromSheet(sheetName, sheet, mode, label = '') {
@@ -265,12 +291,16 @@
     const headers = rows[headerRowIndex].map((value) => String(value ?? '').trim());
     const wavelengthIndex = headers.findIndex(isWavelengthHeader);
     const whiteIndex = headers.findIndex(isWhiteHeader);
-    const convertIntensity = mode === 'intensity' || (mode === 'auto' && whiteIndex >= 0);
+    const darkIndex = headers.findIndex(isDarkHeader);
+    const convertIntensity = mode === 'intensity' || mode === 'intensity-dark' || (mode === 'auto' && whiteIndex >= 0);
 
     if (convertIntensity && whiteIndex < 0) {
       throw localizedError('intensityNeedsWhite', { sheet: sheetName });
     }
-    if (label && whiteIndex >= 0) {
+    if (mode === 'intensity-dark' && darkIndex < 0) {
+      throw localizedError('intensityNeedsDark', { sheet: sheetName });
+    }
+    if (label && (whiteIndex >= 0 || darkIndex >= 0)) {
       throw localizedError('referenceMustBeAbsorbance', { sheet: sheetName });
     }
 
@@ -281,18 +311,31 @@
       headers.length,
       rows.length
     );
+    // 避免將位置相同但實際波長不同的重複量測當作同一點。
+    for (const columnIndex of wavelengthSeriesColumns) {
+      if (columnIndex === wavelengthIndex) continue;
+      for (let rowIndex = headerRowIndex + 1; rowIndex < rows.length; rowIndex++) {
+        const wavelength = cellValue(sheet, rowIndex, wavelengthIndex);
+        const other = cellValue(sheet, rowIndex, columnIndex);
+        if (wavelength !== null && other !== null && wavelength !== other) {
+          throw localizedError('mismatchedWavelengths', { sheet: sheetName });
+        }
+      }
+    }
     const sampleHeaders = headers
       .map((header, index) => ({ header, index }))
       .filter(({ header, index }) =>
         header &&
         index !== wavelengthIndex &&
         index !== whiteIndex &&
+        index !== darkIndex &&
         !isMetadataHeader(header)
       );
     if (!sampleHeaders.length) throw localizedError('noSampleColumn', { sheet: sheetName });
     const sampleColumns = sampleHeaders.map((column, sampleIndex) => {
       const groupEnd = sampleHeaders[sampleIndex + 1]?.index ?? headers.length;
-      const valueIndexes = [];
+      // 樣本標題若位於光強欄，第一筆量測也要參與平均。
+      const valueIndexes = wavelengthSeriesColumns.has(column.index) ? [] : [column.index];
       for (let index = column.index; index < groupEnd; index++) {
         if (wavelengthSeriesColumns.has(index) && index + 1 < groupEnd) {
           valueIndexes.push(index + 1);
@@ -320,8 +363,9 @@
         let absorbance = value;
         if (convertIntensity) {
           const white = cellValue(sheet, rowIndex, whiteIndex);
-          if (white === null || white <= 0 || value <= 0) continue;
-          absorbance = -Math.log10(value / white);
+          const dark = mode === 'intensity-dark' ? cellValue(sheet, rowIndex, darkIndex) : 0;
+          if (white === null || dark === null || white - dark <= 0 || value - dark <= 0) continue;
+          absorbance = -Math.log10((value - dark) / (white - dark));
         }
         if (!Number.isFinite(absorbance)) continue;
         if (points.has(wavelength)) throw localizedError('duplicateWavelength', { sheet: sheetName, wavelength });
@@ -362,22 +406,23 @@
     return Math.sqrt(squaredError / left.length);
   }
 
-  // 將兩類最近 RMSE 換算為合計 100% 的相對相似度，並非準確率或機率。
-  function getRelativeSimilarities(freshDistance, rottenDistance) {
-    if (!Number.isFinite(freshDistance) || !Number.isFinite(rottenDistance)) {
+  // 以最小距離除以各距離，再正規化；零距離類別平均分配相似度。
+  function getRelativeSimilarities(distances) {
+    if (CLASS_LABELS.some((label) => !Number.isFinite(distances[label]))) {
       throw localizedError('nonFiniteDistance');
     }
-    if (freshDistance === rottenDistance) return { fresh: 50, rotten: 50 };
-    if (freshDistance < rottenDistance) {
-      const fresh = 100 / (1 + freshDistance / rottenDistance);
-      return { fresh, rotten: 100 - fresh };
+    const zeroLabels = CLASS_LABELS.filter((label) => distances[label] === 0);
+    if (zeroLabels.length) {
+      return Object.fromEntries(CLASS_LABELS.map((label) => [label, zeroLabels.includes(label) ? 100 / zeroLabels.length : 0]));
     }
-    const rotten = 100 / (1 + rottenDistance / freshDistance);
-    return { fresh: 100 - rotten, rotten };
+    const minimum = Math.min(...CLASS_LABELS.map((label) => distances[label]));
+    const weights = CLASS_LABELS.map((label) => minimum / distances[label]);
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    return Object.fromEntries(CLASS_LABELS.map((label, index) => [label, 100 * weights[index] / total]));
   }
 
   function predictByClassSimilarity(vector, samples, excludedIndex = -1, featureIndexes = null) {
-    const distances = { fresh: Infinity, rotten: Infinity };
+    const distances = { fresh: Infinity, pest: Infinity, rotten: Infinity };
     let nearestSample = null;
     for (let index = 0; index < samples.length; index++) {
       if (index === excludedIndex) continue;
@@ -388,19 +433,17 @@
       if (!nearestSample || distance < nearestSample.distance) nearestSample = { sample, distance };
     }
 
-    const similarities = getRelativeSimilarities(distances.fresh, distances.rotten);
-    // 距離相同時沿用最先找到的最近參考樣本類別。
-    const label = distances.fresh < distances.rotten
-      ? 'fresh'
-      : distances.rotten < distances.fresh ? 'rotten' : nearestSample.sample.label;
+    const similarities = getRelativeSimilarities(distances);
+    const label = nearestSample.sample.label;
     return { label, similarities };
   }
 
   function validateReferences(samples) {
     const freshCount = samples.filter((sample) => sample.label === 'fresh').length;
+    const pestCount = samples.filter((sample) => sample.label === 'pest').length;
     const rottenCount = samples.filter((sample) => sample.label === 'rotten').length;
-    if (freshCount < 3 || rottenCount < 3) {
-      throw localizedError('minimumClassSamples', { freshCount, rottenCount });
+    if (freshCount < 3 || pestCount < 3 || rottenCount < 3) {
+      throw localizedError('minimumClassSamples', { freshCount, pestCount, rottenCount });
     }
 
     const wavelengths = getCommonWavelengths(samples);
@@ -413,6 +456,7 @@
   function leaveOneOutValidation(samples) {
     const totals = {
       fresh: { correct: 0, count: 0 },
+      pest: { correct: 0, count: 0 },
       rotten: { correct: 0, count: 0 }
     };
     samples.forEach((sample, index) => {
@@ -420,34 +464,38 @@
       totals[sample.label].count++;
       if (prediction.label === sample.label) totals[sample.label].correct++;
     });
-    const correct = totals.fresh.correct + totals.rotten.correct;
-    const count = totals.fresh.count + totals.rotten.count;
+    const correct = CLASS_LABELS.reduce((sum, label) => sum + totals[label].correct, 0);
+    const count = CLASS_LABELS.reduce((sum, label) => sum + totals[label].count, 0);
     return { totals, correct, count };
   }
 
   // 參考資料生命週期：檢查 localStorage 格式、載入／還原參考曲線並顯示驗證結果。
   function validStoredReference(value) {
     return value &&
-      value.version === 1 &&
+      value.version === REFERENCE_VERSION &&
+      typeof value.dataVersion === 'string' && value.dataVersion.trim() !== '' &&
+      ['white', 'dark'].includes(value.correction) &&
       Array.isArray(value.wavelengths) &&
       value.wavelengths.length >= MIN_SHARED_WAVELENGTHS &&
-      value.wavelengths.every(Number.isFinite) &&
+      value.wavelengths.every((wavelength) => Number.isFinite(wavelength) && wavelength >= BAND_MIN && wavelength <= BAND_MAX) &&
       Array.isArray(value.samples) &&
-      value.samples.length >= 6 &&
+      value.samples.length >= 9 &&
       value.samples.every((sample) =>
         sample &&
         typeof sample.name === 'string' &&
-        ['fresh', 'rotten'].includes(sample.label) &&
+        CLASS_LABELS.includes(sample.label) &&
         Array.isArray(sample.values) &&
         sample.values.length === value.wavelengths.length &&
         sample.values.every(Number.isFinite)
       ) &&
       value.samples.filter((sample) => sample.label === 'fresh').length >= 3 &&
+      value.samples.filter((sample) => sample.label === 'pest').length >= 3 &&
       value.samples.filter((sample) => sample.label === 'rotten').length >= 3;
   }
 
   function renderValidation(validation) {
     const fresh = validation.totals.fresh;
+    const pest = validation.totals.pest;
     const rotten = validation.totals.rotten;
     $('validationStatus').textContent = formatMessage('validationStatus', {
       correct: validation.correct,
@@ -456,6 +504,8 @@
       freshCorrect: fresh.correct,
       freshCount: fresh.count,
       freshRate: (100 * fresh.correct / fresh.count).toFixed(1),
+      pestCorrect: pest.correct,
+      pestCount: pest.count,
       rottenCorrect: rotten.correct,
       rottenCount: rotten.count,
       rottenRate: (100 * rotten.correct / rotten.count).toFixed(1)
@@ -469,6 +519,9 @@
   }
 
   async function loadReferenceFile(file) {
+    const dataVersion = $('referenceVersion').value.trim();
+    const correction = $('referenceCorrection').value;
+    if (!dataVersion || !['white', 'dark'].includes(correction)) throw localizedError('correctionRequired');
     const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
     const samples = [];
     const ignoredSheets = [];
@@ -489,7 +542,7 @@
       values: makeVector(sample, wavelengths)
     }));
     const validation = leaveOneOutValidation(vectors);
-    const nextReference = { version: 1, wavelengths, samples: vectors, validation };
+    const nextReference = { version: REFERENCE_VERSION, dataVersion, correction, wavelengths, samples: vectors, validation };
 
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(nextReference));
@@ -500,9 +553,13 @@
     referenceSet = nextReference;
     renderValidation(validation);
     const freshCount = vectors.filter((sample) => sample.label === 'fresh').length;
+    const pestCount = vectors.filter((sample) => sample.label === 'pest').length;
     const rottenCount = vectors.filter((sample) => sample.label === 'rotten').length;
     showReferenceState('referenceLoaded', {
+      dataVersion,
+      correction: { translationKey: correction === 'white' ? 'whiteCorrection' : 'darkCorrection' },
       freshCount,
+      pestCount,
       rottenCount,
       wavelengthCount: wavelengths.length,
       bandMin: BAND_MIN,
@@ -517,14 +574,20 @@
       const stored = localStorage.getItem(STORAGE_KEY);
       if (!stored) return;
       const parsed = JSON.parse(stored);
+      // 舊版本只儲存舊波段向量，無法補回新波段缺少的波長。
+      if (parsed && (parsed.version === 1 || parsed.version === 2)) throw localizedError('outdatedStoredReference');
       if (!validStoredReference(parsed)) throw localizedError('invalidStoredReference');
       const validation = leaveOneOutValidation(parsed.samples);
       referenceSet = { ...parsed, validation };
       renderValidation(validation);
       const freshCount = parsed.samples.filter((sample) => sample.label === 'fresh').length;
+      const pestCount = parsed.samples.filter((sample) => sample.label === 'pest').length;
       const rottenCount = parsed.samples.filter((sample) => sample.label === 'rotten').length;
       showReferenceState('referenceRestored', {
+        dataVersion: parsed.dataVersion,
+        correction: { translationKey: parsed.correction === 'white' ? 'whiteCorrection' : 'darkCorrection' },
         freshCount,
+        pestCount,
         rottenCount,
         wavelengthCount: parsed.wavelengths.length
       });
@@ -564,10 +627,12 @@
           <p class="result-similarity-title">${formatMessage('similarityTitle')}</p>
           <div class="result-similarity-values">
             <span>${formatMessage('freshSimilarity', { rate: similarities.fresh.toFixed(1) })}</span>
+            <span>${formatMessage('pestSimilarity', { rate: similarities.pest.toFixed(1) })}</span>
             <span>${formatMessage('rottenSimilarity', { rate: similarities.rotten.toFixed(1) })}</span>
           </div>
         </div>
         <p>${formatMessage('sharedWavelengths', { count: result.sharedCount, total: referenceSet.wavelengths.length })}</p>
+        ${result.sharedCount < referenceSet.wavelengths.length ? `<p>${formatMessage('partialWavelengths')}</p>` : ''}
       </article>`;
     }).join('');
     $('resultsPanel').hidden = false;
@@ -581,6 +646,12 @@
     try {
       const workbook = XLSX.read(await queryFile.arrayBuffer(), { type: 'array' });
       const mode = $('queryMode').value;
+      const correction = $('queryCorrection').value;
+      if (correction !== referenceSet.correction || mode === 'auto' ||
+          (mode === 'intensity' && correction !== 'white') ||
+          (mode === 'intensity-dark' && correction !== 'dark')) {
+        throw localizedError('incompatibleCorrection');
+      }
       const querySamples = [];
       const ignoredSheets = [];
       for (const sheetName of workbook.SheetNames) {
@@ -656,6 +727,11 @@
     const file = $('referenceFile').files[0];
     if (!file) return;
     $('loadReference').disabled = true;
+    referenceSet = null;
+    latestResults = null;
+    $('validationStatus').hidden = true;
+    $('resultsPanel').hidden = true;
+    updateButtons();
     showReferenceState('referenceLoading');
     try {
       await loadReferenceFile(file);
@@ -685,6 +761,13 @@
     $('queryFilename').textContent = queryFile ? queryFile.name : formatMessage('queryFilePlaceholder');
     showQueryState(queryFile ? 'queryFileReady' : 'queryWaiting');
     updateButtons();
+  });
+
+  ['queryMode', 'queryCorrection'].forEach((id) => {
+    $(id).addEventListener('change', () => {
+      latestResults = null;
+      $('resultsPanel').hidden = true;
+    });
   });
 
   document.querySelectorAll('.language-switch button[data-lang]').forEach((button) => {

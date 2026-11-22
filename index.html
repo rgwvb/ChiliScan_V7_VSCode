@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ChiliScan｜光譜數據分析平台 V7</title>
+  <title>ChiliScan｜工廠端辣椒批次光譜品質分析平台 V7</title>
   <link rel="stylesheet" href="css/style.css">
   <script src="js/xlsx.full.min.js"></script>
 </head>
 <body>
   <div class="wrap">
     <header>
-      <div class="brand"><span>◈</span> ChiliScan <span data-i18n="brandSuffix">／ 光譜分析平台</span></div>
+      <div class="brand"><span>◈</span> ChiliScan <span data-i18n="brandSuffix">／ 工廠端光譜品質分析</span></div>
       <div class="header-tools">
-        <a class="btn nav-classifier" href="classification.html">新鮮／腐爛判斷</a>
+        <a class="btn nav-classifier" href="classification.html" data-i18n="classifierLink">三類品質比對</a>
         <div class="tag">UM2280 · ESP32</div>
         <div class="language-switch" aria-label="Language">
           <button type="button" data-lang="zh" aria-pressed="true">中文</button>
@@ -21,7 +21,11 @@
       </div>
     </header>
 
-    <div class="intro" data-i18n="intro">匯入 Excel / CSV 光譜資料，自動辨識波長欄、繪製樣本曲線，並在瀏覽器內計算指定波段的光譜特徵。</div>
+    <div class="intro">
+      <p data-i18n="intro">匯入使用 UM2280 光譜模組量測的資料，在瀏覽器內比較辣椒反射光譜的原始訊號及指定波段特徵，供工廠原料收料與加工前批次抽樣研究和品質初步篩選參考。</p>
+      <p data-i18n="factoryLimits">目前以匯入檔案分析為主，尚無設備直接連線或產線自動檢測。結果受量測條件與校正方式影響，不能單獨作為食品安全或產品放行依據。</p>
+      <p class="warning" data-i18n="factoryIncomplete">工廠端改版尚未完成批次追溯、匯入檢查及主頁校正，請勿用於實際工廠判定。</p>
+    </div>
 
     <section class="panel">
       <h2 data-i18n="importTitle">01　匯入光譜資料</h2>
@@ -39,10 +43,10 @@
           <div class="tools">
             <label class="field"><span data-i18n="sheetLabel">工作表（優先：新鮮平均／光強）</span><select id="sheet" disabled><option data-i18n="notImported">尚未匯入</option></select></label>
             <label class="field"><span data-i18n="wavelengthLabel">波長欄</span><select id="wave" disabled><option data-i18n="autoDetect">自動辨識</option></select></label>
-            <label class="field"><span data-i18n="startWavelength">起始波長（nm）</span><input id="from" type="number" value="620" step="1"></label>
-            <label class="field"><span data-i18n="endWavelength">結束波長（nm）</span><input id="to" type="number" value="680" step="1"></label>
+            <label class="field"><span data-i18n="startWavelength">起始波長（nm）</span><input id="from" type="number" value="600" step="1"></label>
+            <label class="field"><span data-i18n="endWavelength">結束波長（nm）</span><input id="to" type="number" value="660" step="1"></label>
             <label class="field"><span data-i18n="xStep">X軸刻度間距（nm）</span><input id="xstep" type="number" value="10" min="0.01" step="any"></label>
-            <button class="btn secondary" id="presetBand" type="button" data-i18n="setBand">設定 620–680 nm</button>
+            <button class="btn secondary" id="presetBand" type="button" data-i18n="setBand">設定 600–660 nm</button>
           </div>
         </div>
         <div class="setting-group replicate-group">

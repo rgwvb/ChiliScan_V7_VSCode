@@ -86,7 +86,7 @@
   color: #ffd18a;
 }
 
-/* 顯示新鮮與腐爛的相對相似度，不代表準確率。 */
+/* 顯示各類相對相似度，不代表準確率。 */
 .result-similarity {
   margin-top: 12px;
   padding: 10px 12px;

@@ -28,7 +28,7 @@ const staticTranslations={
 'intro':'Import Excel / CSV spectral data, automatically identify wavelength columns, plot sample curves, and calculate spectral features for a specified band. All analysis is performed in your browser; no data is uploaded to a server.',
 '01　匯入光譜資料':'01  Import Spectral Data',
 '點擊選擇 Excel / CSV，或將檔案拖曳到這裡':'Click to select Excel / CSV, or drag a file here',
-'支援 .xlsx、.xls、.csv；匯入後可切換工作表；優先開啟「新鮮平均」，否則選擇「光強」；支援跨工作表光譜疊加與多組波長欄；預設分析 620–680 nm，曲線可切換平滑／原始顯示':'Supports .xlsx, .xls, and .csv; switch worksheets after import; prefers "Fresh Average", otherwise "Intensity"; supports cross-sheet overlays and multiple wavelength columns; default band is 620–680 nm; curves can be smoothed or displayed as raw data',
+'支援 .xlsx、.xls、.csv；匯入後可切換工作表；優先開啟「新鮮平均」，否則選擇「光強」；支援跨工作表光譜疊加與多組波長欄；預設分析 600–660 nm，曲線可切換平滑／原始顯示':'Supports .xlsx, .xls, and .csv; switch worksheets after import; prefers "Fresh Average", otherwise "Intensity"; supports cross-sheet overlays and multiple wavelength columns; default band is 600–660 nm; curves can be smoothed or displayed as raw data',
 '工作表（優先：新鮮平均／光強）':'Worksheet (preferred: Fresh Average / Intensity)',
 '尚未匯入':'Not imported',
 '波長欄':'Wavelength Column',
@@ -36,7 +36,7 @@ const staticTranslations={
 '起始波長（nm）':'Start wavelength (nm)',
 '結束波長（nm）':'End wavelength (nm)',
 'X軸刻度間距（nm）':'X-axis tick spacing (nm)',
-'設定 620–680 nm':'Set 620–680 nm',
+'設定 600–660 nm':'Set 600–660 nm',
 '重新分析':'Re-analyze',
 '載入示範資料':'Load Demo Data',
 '等待資料匯入。':'Waiting for data import.',
@@ -78,7 +78,7 @@ const staticTranslations={
 '05　各樣本光譜特徵比較':'05  Spectral Feature Comparison',
 '匯出特徵 CSV':'Export Features CSV',
 '匯出選定波段原始數據 CSV':'Export Raw Band CSV',
-'原始數據匯出會依上方起始／結束波長篩選，並只匯出目前勾選的樣本；設定 620–680 nm 後，結果僅包含此範圍內的量測點。':'Raw-data export uses the start/end wavelengths above and exports only currently checked samples. Setting 620–680 nm limits results to measurement points in that range.',
+'原始數據匯出會依上方起始／結束波長篩選，並只匯出目前勾選的樣本；設定 600–660 nm 後，結果僅包含此範圍內的量測點。':'Raw-data export uses the start/end wavelengths above and exports only currently checked samples. Setting 600–660 nm limits results to measurement points in that range.',
 '樣本名稱（含工作表）':'Sample Name (with Worksheet)',
 '波峰波長 (nm)':'Peak Wavelength (nm)',
 '最低強度':'Minimum Intensity',
@@ -101,9 +101,13 @@ const staticTranslations={
 let currentLanguage=localStorage.getItem('chiliscan-language')||'zh';
 ['chiliscan-kumo-reference-library','chiliscan-kumo-api-url','chiliscan-kumo-api-token'].forEach(key=>localStorage.removeItem(key));
 const uiTranslations={
-  pageTitle:['ChiliScan｜光譜數據分析平台 V7','ChiliScan | Spectral Data Analysis Platform V7'],
-  brandSubtitle:['／ 光譜分析平台','/ Spectral Analysis Platform'],
-  intro:['匯入 Excel / CSV 光譜資料，自動辨識波長欄、繪製樣本曲線，並在瀏覽器內計算指定波段的光譜特徵。','Import Excel / CSV spectral data to identify wavelength columns, plot sample curves, and calculate spectral features for a selected band, all in your browser.'],
+  pageTitle:['ChiliScan｜工廠端辣椒批次光譜品質分析平台 V7','ChiliScan | Factory Chili Batch Spectral Quality Analysis V7'],
+  brandSuffix:['／ 工廠端光譜品質分析','/ Factory Spectral Quality Analysis'],
+  brandSubtitle:['／ 工廠端光譜品質分析','/ Factory Spectral Quality Analysis'],
+  intro:['匯入使用 UM2280 光譜模組量測的資料，在瀏覽器內比較辣椒反射光譜的原始訊號及指定波段特徵，供工廠原料收料與加工前批次抽樣研究和品質初步篩選參考。','Import measurements from the UM2280 spectral module to compare raw signals and selected-band features of chili reflection spectra in the browser, supporting research and preliminary quality screening of sampled batches before processing.'],
+  factoryLimits:['目前以匯入檔案分析為主，尚無設備直接連線或產線自動檢測。結果受量測條件與校正方式影響，不能單獨作為食品安全或產品放行依據。','The current version analyzes imported files; it does not connect directly to devices or perform automatic production-line inspection. Results depend on measurement and correction conditions and must not alone determine food safety or product release.'],
+  factoryIncomplete:['工廠端改版尚未完成批次追溯、匯入檢查及主頁校正，請勿用於實際工廠判定。','The factory redesign is incomplete: batch traceability, import checks and main-page correction are not yet implemented. Do not use it for factory decisions.'],
+  classifierLink:['三類品質比對','Three-Class Quality Comparison'],
   importTitle:['01　匯入光譜資料','01  Import Spectral Data'],
   uploadTitle:['選擇 Excel / CSV，或將檔案拖曳到這裡','Choose an Excel / CSV file, or drag it here'],
   uploadHint:['支援 .xlsx、.xls、.csv。三次量測放在同一工作表不同欄，例如：辣椒1、辣椒2、辣椒3。','Supports .xlsx, .xls, and .csv. Put three measurements in separate columns on one worksheet, e.g. Pepper1, Pepper2, Pepper3.'],
@@ -118,7 +122,7 @@ const uiTranslations={
   autoUpdateHint:['匯入後會自動分析；修改欄位或波段後會自動重新計算。','Analysis starts on import and recalculates when worksheet, wavelength, or range settings change.'],
   replicateSettings:['重複量測處理','Replicate Measurements'],
   replicateHint:['同一品項的重複量測請使用相同名稱或放在同一組欄位標題下；程式會依相同波長逐點平均。','Use the same sample name or place repeated measurements under one group heading; values are averaged at matching wavelengths.'],
-  setBand:['設定 620–680 nm','Set 620–680 nm'],
+  setBand:['設定 600–660 nm','Set 600–660 nm'],
   reanalyze:['重新分析','Re-analyze'],
   demo:['載入示範資料','Load Demo Data'],
   waiting:['等待資料匯入。','Waiting for data import.'],
@@ -164,7 +168,7 @@ const uiTranslations={
   featureTableTitle:['05　各樣本光譜特徵比較','05  Spectral Feature Comparison'],
   exportFeatures:['匯出特徵 CSV','Export Features CSV'],
   exportRaw:['匯出選定波段原始數據 CSV','Export Selected-Band Raw Data CSV'],
-  exportHint:['原始數據匯出會依上方起始／結束波長篩選，並只匯出目前勾選的樣本；設定 620–680 nm 後，結果僅包含此範圍內的量測點。','Raw-data export uses the start/end wavelengths above and includes only selected samples. Set 620–680 nm to export measurements in that range only.'],
+  exportHint:['原始數據匯出會依上方起始／結束波長篩選，並只匯出目前勾選的樣本；設定 600–660 nm 後，結果僅包含此範圍內的量測點。','Raw-data export uses the start/end wavelengths above and includes only selected samples. Set 600–660 nm to export measurements in that range only.'],
   tableSample:['樣本名稱（含工作表）','Sample Name (with Worksheet)'],
   tablePeakW:['波峰波長 (nm)','Peak Wavelength (nm)'],
   tablePeakI:['波峰強度','Peak Intensity'],
@@ -518,7 +522,7 @@ $('crossSheets').addEventListener('change',e=>{
  analyzeCross();
 });
 // 快速套用指定波段；若已有資料，立即重新分析並更新匯出內容。
-$('presetBand').onclick=()=>{$('from').value='620';$('to').value='680';if(workbook||demoDataLoaded)analyze()};
+$('presetBand').onclick=()=>{$('from').value='600';$('to').value='660';if(workbook||demoDataLoaded)analyze()};
 $('replicateMode').addEventListener('change',()=>{
  if(workbook&&$('compareMode').value==='cross'){syncCrossReplicateSelections();analyzeCross()}
  else if(workbook)analyze();

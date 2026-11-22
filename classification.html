@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ChiliScan｜吸光度新鮮／腐爛判斷</title>
+  <title>ChiliScan｜三類品質初步篩選實驗版</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/classifier.css">
   <script defer src="js/xlsx.full.min.js"></script>
@@ -12,7 +12,7 @@
 <body>
   <div class="wrap">
     <header>
-      <div class="brand"><span>◈</span> ChiliScan <span data-i18n="brandSuffix">／ 新鮮・腐爛判斷</span></div>
+      <div class="brand"><span>◈</span> ChiliScan <span data-i18n="brandSuffix">／ 三類品質初步篩選實驗版</span></div>
       <div class="header-tools">
         <a class="btn secondary" href="index.html" data-i18n="backToSpectrum">返回光譜分析</a>
         <div class="language-switch" aria-label="Language">
@@ -23,18 +23,29 @@
     </header>
 
     <div class="intro" data-i18n="intro">
-      使用 620–680 nm 吸光度參考曲線進行本機比對。資料只在此瀏覽器處理，不會上傳；此功能為實驗版，結果不是已驗證的食品安全判定。
+      使用 600–660 nm 衍生吸光度參考曲線進行新鮮、蟲害與腐爛比對。所有結果都需要人工複核，尚未完成獨立驗證；資料只在此瀏覽器處理，不能作為食品安全或產品放行依據。
     </div>
+    <p class="warning" data-i18n="factoryIncomplete">工廠端改版尚未完成資料追溯與量測檢查，請勿用於實際工廠判定。</p>
 
     <main>
       <section class="panel">
         <h2 data-i18n="referenceTitle">01　載入參考資料（首次使用或更新時）</h2>
-        <p class="note" data-i18n="referenceHint">選擇含「新鮮」與「腐爛」兩個工作表的吸光度參考檔。載入後會儲存在此瀏覽器，之後可直接上傳待測資料。</p>
+        <p class="note" data-i18n="referenceHint">選擇含「新鮮」、「蟲害」與「腐爛」工作表的衍生吸光度參考檔，資料會儲存在此瀏覽器。每類至少 3 筆、至少 40 個共同波長是程式條件，不是驗證標準。</p>
         <label class="upload classifier-upload" for="referenceFile">
-          <strong data-i18n="chooseReference">選擇新鮮／腐爛吸光度參考檔</strong>
+          <strong data-i18n="chooseReference">選擇三類衍生吸光度參考檔</strong>
           <span class="sub" id="referenceFilename" data-i18n="fileTypes">支援 .xlsx、.xls、.csv</span>
           <input id="referenceFile" type="file" accept=".xlsx,.xls,.csv">
         </label>
+        <div class="tools">
+          <label class="field"><span data-i18n="referenceVersion">參考資料版本（使用者提供）</span><input id="referenceVersion" type="text"></label>
+          <label class="field"><span data-i18n="referenceCorrection">參考資料校正方式（使用者確認）</span>
+            <select id="referenceCorrection">
+              <option value="" data-i18n="chooseCorrection">請選擇</option>
+              <option value="white" data-i18n="whiteCorrection">白板比值，未做暗訊號校正</option>
+              <option value="dark" data-i18n="darkCorrection">白板與暗訊號校正</option>
+            </select>
+          </label>
+        </div>
         <div class="tools">
           <button class="btn" id="loadReference" type="button" disabled data-i18n="loadReference">載入並儲存參考資料</button>
           <button class="btn secondary" id="clearReference" type="button" disabled data-i18n="clearReference">清除本機參考資料</button>
@@ -45,7 +56,7 @@
 
       <section class="panel">
         <h2 data-i18n="queryTitle">02　上傳待測資料</h2>
-        <p class="note" data-i18n="queryHint">每個工作表需有「波長 (nm)」欄；只比對 620–680 nm。樣本可用一欄已平均光譜，或在樣本名稱下放多組「波長／光強」重複量測欄，系統會先依波長平均光強。原始光強資料還需在同一工作表含「標準白」欄，再換算吸光度 A = −log10(樣本平均光強／標準白光強度)。只有數值、沒有波長欄的矩陣無法比對。</p>
+        <p class="note" data-i18n="queryHint">每個工作表需有「波長 (nm)」欄，只比對 600–660 nm。原始光強需有「標準白」欄；選擇暗訊號校正時也需要「暗訊號」欄。以校正後的比值 R 計算衍生吸光度 A = −log10(R)，並確認參考與待測資料校正方式一致。</p>
         <label class="upload classifier-upload" for="queryFile">
           <strong data-i18n="chooseQuery">選擇待測 Excel／CSV</strong>
           <span class="sub" id="queryFilename" data-i18n="queryFilePlaceholder">可包含一個或多個待測樣本</span>
@@ -56,11 +67,19 @@
             <span data-i18n="queryModeLabel">待測資料格式</span>
             <select id="queryMode">
               <option value="auto" data-i18n="modeAuto">自動：有標準白欄就換算，否則視為吸光度</option>
-              <option value="absorbance" data-i18n="modeAbsorbance">已是吸光度</option>
+              <option value="absorbance" data-i18n="modeAbsorbance" selected>已是衍生吸光度</option>
               <option value="intensity" data-i18n="modeIntensity">原始光強（需有標準白欄）</option>
+              <option value="intensity-dark" data-i18n="modeIntensityDark">原始光強（需有標準白及暗訊號欄）</option>
             </select>
           </label>
-          <button class="btn" id="classify" type="button" disabled data-i18n="classify">比對新鮮／腐爛</button>
+          <label class="field"><span data-i18n="queryCorrection">待測資料校正方式（使用者確認）</span>
+            <select id="queryCorrection">
+              <option value="" data-i18n="chooseCorrection">請選擇</option>
+              <option value="white" data-i18n="whiteCorrection">白板比值，未做暗訊號校正</option>
+              <option value="dark" data-i18n="darkCorrection">白板與暗訊號校正</option>
+            </select>
+          </label>
+          <button class="btn" id="classify" type="button" disabled data-i18n="classify">比對三類參考資料</button>
         </div>
         <div class="status" id="queryStatus" role="status" data-i18n="queryWaiting">請先載入參考資料，再選擇待測檔案。</div>
       </section>
