@@ -1,3 +1,4 @@
+/* 參考檔與待測檔的上傳區：保留檔案輸入的鍵盤操作與焦點提示。 */
 .classifier-upload {
   display: flex;
   min-height: 120px;
@@ -23,6 +24,7 @@
   outline-offset: 3px;
 }
 
+/* 待測資料格式、比對按鈕與錯誤訊息。 */
 .classifier-controls {
   align-items: end;
 }
@@ -35,6 +37,7 @@
   color: #ffd18a;
 }
 
+/* 顯示參考資料的留一驗證結果及使用限制。 */
 .validation-banner {
   margin-top: 12px;
   padding: 12px 14px;
@@ -51,6 +54,7 @@
   background: rgba(120, 83, 18, .18);
 }
 
+/* 依畫面寬度排列各樣本結果卡；腐爛結果使用不同顏色。 */
 .result-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
@@ -82,7 +86,8 @@
   color: #ffd18a;
 }
 
-.result-votes {
+/* 顯示新鮮與腐爛的相對相似度，不代表準確率。 */
+.result-similarity {
   margin-top: 12px;
   padding: 10px 12px;
   border: 1px solid rgba(148, 163, 184, .2);
@@ -90,13 +95,13 @@
   background: rgba(31, 45, 61, .45);
 }
 
-.result-votes-title {
+.result-similarity-title {
   margin: 0 0 6px;
   color: #aebccd;
   font-size: 13px;
 }
 
-.result-vote-values {
+.result-similarity-values {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 14px;
@@ -110,6 +115,7 @@
   line-height: 1.55;
 }
 
+/* 手機畫面讓待測資料格式欄位佔滿可用寬度。 */
 @media (max-width: 620px) {
   .classifier-controls .field {
     width: 100%;

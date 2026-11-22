@@ -4,12 +4,11 @@
   ['chiliscan-kumo-reference-library', 'chiliscan-kumo-api-url', 'chiliscan-kumo-api-token']
     .forEach((key) => localStorage.removeItem(key));
 
-  // 本模組處理新鮮／腐爛吸光度頁：讀取參考與待測檔、執行 3 近鄰比對並更新畫面。
+  // 本模組處理新鮮／腐爛吸光度頁：讀取參考與待測檔、計算 RMSE 相對相似度並更新畫面。
   // 光譜處理與分類都在瀏覽器執行，不會上傳資料。
   const BAND_MIN = 620;
   const BAND_MAX = 680;
   const MIN_SHARED_WAVELENGTHS = 40;
-  const NEIGHBOR_COUNT = 3;
   const STORAGE_KEY = 'chiliscan-absorbance-binary-reference-v1';
   // 頁面各狀態訊息的繁中與英文版本集中在此，方便切換語言時重新顯示動態內容。
   const messages = {
@@ -60,12 +59,12 @@
     referenceClearFailed: ['無法清除參考資料：{detail}', 'Could not clear reference data: {detail}'],
     referenceStorageError: ['參考資料無法儲存到此瀏覽器：{detail}', 'Could not save reference data in this browser: {detail}'],
     validationStatus: [
-      '留一樣本測試（3 個近鄰）：整體 {correct}/{count}（{accuracy}%）；新鮮 {freshCorrect}/{freshCount}（{freshRate}%），腐爛 {rottenCorrect}/{rottenCount}（{rottenRate}%）。這只是目前參考資料的內部測試，不代表外部準確率。',
-      'Leave-one-out validation (3 neighbors): overall {correct}/{count} ({accuracy}%); fresh {freshCorrect}/{freshCount} ({freshRate}%), rotten {rottenCorrect}/{rottenCount} ({rottenRate}%). This is an internal test of the current reference data, not an external accuracy result.'
+      '留一樣本測試（依兩類最近 RMSE 相似度判斷）：整體 {correct}/{count}（{accuracy}%）；新鮮 {freshCorrect}/{freshCount}（{freshRate}%），腐爛 {rottenCorrect}/{rottenCount}（{rottenRate}%）。這只是目前參考資料的內部測試，不代表外部準確率。',
+      'Leave-one-out validation (nearest-class RMSE similarity): overall {correct}/{count} ({accuracy}%); fresh {freshCorrect}/{freshCount} ({freshRate}%), rotten {rottenCorrect}/{rottenCount} ({rottenRate}%). This is an internal test of the current reference data, not an external accuracy result.'
     ],
     resultWarning: [
-      '參考資料留一交叉驗證：整體準確率 {correct}/{count}（{accuracy}%）；新鮮辨識率 {freshCorrect}/{freshCount}（{freshRate}%），腐爛辨識率 {rottenCorrect}/{rottenCount}（{rottenRate}%）。這是參考資料的整體測試結果，不代表單筆樣本準確率；目前分類仍依 3 個近鄰判斷，請勿單獨作為食品安全依據。',
-      'Reference leave-one-out validation: overall accuracy {correct}/{count} ({accuracy}%); fresh detection {freshCorrect}/{freshCount} ({freshRate}%), rotten detection {rottenCorrect}/{rottenCount} ({rottenRate}%). This is an overall test of the reference data, not an individual sample’s accuracy. Classification uses 3 nearest neighbors; do not rely on it alone for food-safety decisions.'
+      '參考資料留一交叉驗證：整體準確率 {correct}/{count}（{accuracy}%）；新鮮辨識率 {freshCorrect}/{freshCount}（{freshRate}%），腐爛辨識率 {rottenCorrect}/{rottenCount}（{rottenRate}%）。卡片百分比是依兩類最近參考光譜 RMSE 換算的相對相似度，不是單筆準確率或機率；結果不可單獨作為食品安全依據。',
+      'Reference leave-one-out validation: overall accuracy {correct}/{count} ({accuracy}%); fresh detection {freshCorrect}/{freshCount} ({freshRate}%), rotten detection {rottenCorrect}/{rottenCount} ({rottenRate}%). Card percentages are relative similarities derived from the nearest reference RMSE for each class, not per-sample accuracy or probability. Do not rely on them alone for food-safety decisions.'
     ],
     missingWavelengthHeader: ['{sheet}：找不到「波長」欄位標題。', '{sheet}: wavelength column header not found.'],
     intensityNeedsWhite: ['{sheet}：原始光強資料必須在同一工作表包含「標準白」欄。', '{sheet}: raw intensity data requires a “White Reference” column on the same worksheet.'],
@@ -80,6 +79,10 @@
     minimumCommonWavelengths: [
       '所有參考樣本共同有效波長只有 {count} 點，至少需要 {minimum} 點。',
       'Reference samples have only {count} shared valid wavelengths; at least {minimum} are required.'
+    ],
+    nonFiniteDistance: [
+      '光譜數值範圍過大，無法計算 RMSE 相似度。',
+      'Spectrum values are too large to compute RMSE similarity.'
     ],
     invalidStoredReference: ['本機參考資料格式無效，請重新載入參考檔。', 'Local reference data is invalid. Reload the reference file.'],
     queryProcessing: ['正在本機讀取並比對吸光度資料…', 'Reading and comparing absorbance data in this browser…'],
@@ -105,10 +108,10 @@
     fresh: ['新鮮', 'Fresh'],
     rotten: ['腐爛', 'Rotten'],
     cannotClassify: ['無法判斷', 'Unable to classify'],
-    provisionalLabel: ['暫定較接近：{label}', 'Provisional match: {label}'],
-    voteTitle: ['近鄰投票比例（不是準確率）', 'Nearest-neighbor vote share (not accuracy)'],
-    freshVotes: ['新鮮：{count}/{total}（{rate}%）', 'Fresh: {count}/{total} ({rate}%)'],
-    rottenVotes: ['腐爛：{count}/{total}（{rate}%）', 'Rotten: {count}/{total} ({rate}%)'],
+    provisionalLabel: ['較相似類別：{label}', 'Closer match: {label}'],
+    similarityTitle: ['相對相似度（不是準確率／機率）', 'Relative similarity (not accuracy / probability)'],
+    freshSimilarity: ['新鮮：{rate}%', 'Fresh: {rate}%'],
+    rottenSimilarity: ['腐爛：{rate}%', 'Rotten: {rate}%'],
     sharedWavelengths: ['有效共同波長：{count}/{total} 點', 'Shared valid wavelengths: {count}/{total} points']
   };
   let language = localStorage.getItem('chiliscan-language') === 'en' ? 'en' : 'zh';
@@ -359,31 +362,38 @@
     return Math.sqrt(squaredError / left.length);
   }
 
-  function predictByNeighbors(vector, samples, excludedIndex = -1, featureIndexes = null) {
-    const neighborLimit = Math.min(NEIGHBOR_COUNT, samples.length - (excludedIndex >= 0 ? 1 : 0));
-    const neighbors = [];
+  // 將兩類最近 RMSE 換算為合計 100% 的相對相似度，並非準確率或機率。
+  function getRelativeSimilarities(freshDistance, rottenDistance) {
+    if (!Number.isFinite(freshDistance) || !Number.isFinite(rottenDistance)) {
+      throw localizedError('nonFiniteDistance');
+    }
+    if (freshDistance === rottenDistance) return { fresh: 50, rotten: 50 };
+    if (freshDistance < rottenDistance) {
+      const fresh = 100 / (1 + freshDistance / rottenDistance);
+      return { fresh, rotten: 100 - fresh };
+    }
+    const rotten = 100 / (1 + rottenDistance / freshDistance);
+    return { fresh: 100 - rotten, rotten };
+  }
+
+  function predictByClassSimilarity(vector, samples, excludedIndex = -1, featureIndexes = null) {
+    const distances = { fresh: Infinity, rotten: Infinity };
+    let nearestSample = null;
     for (let index = 0; index < samples.length; index++) {
       if (index === excludedIndex) continue;
-      const item = {
-        sample: samples[index],
-        index,
-        distance: rmse(vector, samples[index].values, featureIndexes)
-      };
-      const insertionIndex = neighbors.findIndex((neighbor) => item.distance < neighbor.distance);
-      if (insertionIndex < 0) {
-        neighbors.push(item);
-      } else {
-        neighbors.splice(insertionIndex, 0, item);
-      }
-      if (neighbors.length > neighborLimit) neighbors.pop();
+      const sample = samples[index];
+      const distance = rmse(vector, sample.values, featureIndexes);
+      if (!Number.isFinite(distance)) throw localizedError('nonFiniteDistance');
+      if (distance < distances[sample.label]) distances[sample.label] = distance;
+      if (!nearestSample || distance < nearestSample.distance) nearestSample = { sample, distance };
     }
 
-    const votes = { fresh: 0, rotten: 0 };
-    neighbors.forEach(({ sample }) => votes[sample.label]++);
-    const label = votes.fresh === votes.rotten
-      ? neighbors[0].sample.label
-      : votes.fresh > votes.rotten ? 'fresh' : 'rotten';
-    return { label, votes, neighbors };
+    const similarities = getRelativeSimilarities(distances.fresh, distances.rotten);
+    // 距離相同時沿用最先找到的最近參考樣本類別。
+    const label = distances.fresh < distances.rotten
+      ? 'fresh'
+      : distances.rotten < distances.fresh ? 'rotten' : nearestSample.sample.label;
+    return { label, similarities };
   }
 
   function validateReferences(samples) {
@@ -406,7 +416,7 @@
       rotten: { correct: 0, count: 0 }
     };
     samples.forEach((sample, index) => {
-      const prediction = predictByNeighbors(sample.values, samples, index);
+      const prediction = predictByClassSimilarity(sample.values, samples, index);
       totals[sample.label].count++;
       if (prediction.label === sample.label) totals[sample.label].correct++;
     });
@@ -431,7 +441,9 @@
         Array.isArray(sample.values) &&
         sample.values.length === value.wavelengths.length &&
         sample.values.every(Number.isFinite)
-      );
+      ) &&
+      value.samples.filter((sample) => sample.label === 'fresh').length >= 3 &&
+      value.samples.filter((sample) => sample.label === 'rotten').length >= 3;
   }
 
   function renderValidation(validation) {
@@ -506,8 +518,9 @@
       if (!stored) return;
       const parsed = JSON.parse(stored);
       if (!validStoredReference(parsed)) throw localizedError('invalidStoredReference');
-      referenceSet = parsed;
-      renderValidation(parsed.validation);
+      const validation = leaveOneOutValidation(parsed.samples);
+      referenceSet = { ...parsed, validation };
+      renderValidation(validation);
       const freshCount = parsed.samples.filter((sample) => sample.label === 'fresh').length;
       const rottenCount = parsed.samples.filter((sample) => sample.label === 'rotten').length;
       showReferenceState('referenceRestored', {
@@ -543,17 +556,15 @@
       }
       const displayedLabel = labelName(result.prediction.label);
       const className = result.prediction.label === 'rotten' ? 'result-label rotten' : 'result-label';
-      const votes = result.prediction.votes;
-      const voteCount = votes.fresh + votes.rotten;
-      const voteRate = (count) => (100 * count / voteCount).toFixed(1);
+      const similarities = result.prediction.similarities;
       return `<article class="result-card">
         <h3>${escapeHtml(result.name)}</h3>
         <span class="${className}">${formatMessage('provisionalLabel', { label: displayedLabel })}</span>
-        <div class="result-votes">
-          <p class="result-votes-title">${formatMessage('voteTitle')}</p>
-          <div class="result-vote-values">
-            <span>${formatMessage('freshVotes', { count: votes.fresh, total: voteCount, rate: voteRate(votes.fresh) })}</span>
-            <span>${formatMessage('rottenVotes', { count: votes.rotten, total: voteCount, rate: voteRate(votes.rotten) })}</span>
+        <div class="result-similarity">
+          <p class="result-similarity-title">${formatMessage('similarityTitle')}</p>
+          <div class="result-similarity-values">
+            <span>${formatMessage('freshSimilarity', { rate: similarities.fresh.toFixed(1) })}</span>
+            <span>${formatMessage('rottenSimilarity', { rate: similarities.rotten.toFixed(1) })}</span>
           </div>
         </div>
         <p>${formatMessage('sharedWavelengths', { count: result.sharedCount, total: referenceSet.wavelengths.length })}</p>
@@ -605,7 +616,7 @@
         }
         const sharedIndexes = sharedWavelengths.map((wavelength) => referenceIndexes.get(wavelength));
         const queryVector = sharedWavelengths.map((wavelength) => sample.points.get(wavelength));
-        const prediction = predictByNeighbors(queryVector, referenceSet.samples, -1, sharedIndexes);
+        const prediction = predictByClassSimilarity(queryVector, referenceSet.samples, -1, sharedIndexes);
         return { name: sample.name, sharedCount: sharedWavelengths.length, prediction };
       });
 

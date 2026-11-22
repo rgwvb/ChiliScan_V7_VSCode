@@ -160,8 +160,13 @@ header {
   background:
     linear-gradient(135deg, rgba(60, 137, 122, .16), rgba(24, 48, 67, .68)),
     #17283a;
-  outline: none;
   transform: translateY(-1px);
+}
+
+/* 鍵盤操作時顯示清楚的上傳區焦點框。 */
+.upload:focus-visible {
+  outline: 2px solid #78e2c4;
+  outline-offset: 3px;
 }
 
 .upload strong {
@@ -603,6 +608,20 @@ td:first-child { font-weight: 700; color: #dfeaf4; }
 ::-webkit-scrollbar-track { background: #0d1723; border-radius: 999px; }
 ::-webkit-scrollbar-thumb { background: #344b60; border: 2px solid #0d1723; border-radius: 999px; }
 ::-webkit-scrollbar-thumb:hover { background: #46627a; }
+
+/* 遵守系統的減少動態效果設定，停用平滑捲動與過渡動畫。 */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  .language-switch button,
+  .upload,
+  .field input,
+  .field select,
+  .btn,
+  .nav-classifier::after,
+  .sample,
+  tbody tr { transition: none; }
+}
 
 @media (max-width: 900px) {
   .twocol { grid-template-columns: 1fr; }
