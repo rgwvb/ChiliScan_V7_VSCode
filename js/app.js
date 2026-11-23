@@ -11,7 +11,7 @@
  * 匯入檔案 -> 辨識工作表欄位 -> 篩選波段 -> 選取樣本 -> 計算特徵 -> 繪圖/匯出
  *
  * 注意：
- * 一般分析與資料處理都在訪客瀏覽器中進行，不會上傳光譜。
+ * 分析在瀏覽器中進行；使用者可選擇將資料快照儲存至 Firebase。
  */
 
 // =====================================================
@@ -22,6 +22,7 @@
 // 2. 提供中英文切換、數值轉換、HTML跳脈防護與格式化工具。
 // 3. 不直接處理 Excel/CSV讀取或畫圖；這些工作交給後面的區塊。
 const $=id=>document.getElementById(id);let crossSpecs=[],crossCache=new Map();let workbook=null,rows=[],headers=[],sourceHeaders=[],widx=-1,series=[],selected=new Set(),hover=null,rawPage=0,demoDataLoaded=false,csvImported=false,replicateSummary={groups:0,measurements:0};const rawPageSize=100;const palette=['#60a5fa','#34d399','#fbbf24','#fb7185','#a78bfa','#22d3ee','#f472b6','#bef264','#f97316','#93c5fd'];
+let cloudSourceName='';
 const staticTranslations={
 'pageTitle':'ChiliScan | Spectral Data Analysis Platform V7',
 'brandSuffix':'/ Spectral Analysis Platform',
@@ -592,6 +593,7 @@ $('drop').addEventListener('keydown',e=>{
 // load()：讀取CSV或Excel；Excel解析使用SheetJS。
 async function load(file){try{
  demoDataLoaded=false;csvImported=false;
+ cloudSourceName='';
  const lower=file.name.toLowerCase();
  if(lower.endsWith('.csv')){
   const text=await file.text();
@@ -608,6 +610,7 @@ async function load(file){try{
  const preferred=workbook.SheetNames.find(s=>s.trim()==='新鮮平均')||workbook.SheetNames.find(s=>s.trim()==='光強')||workbook.SheetNames[0];
  $('sheet').value=preferred;populateCross();
  if($('compareMode').value==='cross')analyzeCross();else parseSheet(preferred);
+ cloudSourceName=file.name;
  $('status').innerHTML+=`<span class="sub">　檔案：${escapeHtml(file.name)}</span>`;
 }catch(e){$('status').innerHTML=`<span class="warning">無法匯入：${escapeHtml(e.message)}</span>`}}$('sheet').onchange=()=>{try{parseSheet($('sheet').value)}catch(e){$('status').innerHTML='<span class="warning">工作表讀取失敗：'+escapeHtml(e.message)+'</span>'}};$('wave').onchange=analyze;
 ['from','to'].forEach(id=>$(id).addEventListener('change',()=>{if(workbook||demoDataLoaded)analyze()}));
@@ -635,5 +638,55 @@ $('exportRaw').onclick=()=>{
   [(currentLanguage==='en'?'Wavelength(nm)':'波長(nm)'),...picked.map(s=>s.name)],
   ...wavelengths.map(w=>[w,...values.map(map=>map.get(w)??'')])
  ]);
+};
+function cloudAdapterError(zh,en){const error=new Error(currentLanguage==='en'?en:zh);error.cloudMessage=[zh,en];return error}
+window.chiliCloudAdapter={
+ page:'spectrum',
+ capture(){
+  if(demoDataLoaded)throw cloudAdapterError('模擬示範資料不可儲存到雲端。','Simulated demo data cannot be saved.');
+  if(!workbook||!cloudSourceName||!series.length)throw cloudAdapterError('請先匯入並分析量測檔案。','Import and analyze a measurement file first.');
+  return {
+   version:1,name:cloudSourceName,
+   sheets:workbook.SheetNames.map(name=>({name,rows:sheetToRows(workbook.Sheets[name])})),
+   settings:{from:$('from').value,to:$('to').value,sheet:$('sheet').value,wave:$('wave').value,
+    compare:$('compareMode').value,replicate:$('replicateMode').value,
+    crossSheets:[...document.querySelectorAll('.cross-sheet:checked')].map(e=>e.dataset.sheet),
+    crossSamples:[...document.querySelectorAll('.cross-sample:checked')].map(e=>({sheet:e.dataset.sheet,col:e.dataset.col})),
+    selected:[...selected].map(index=>series[index]?.key||series[index]?.name).filter(Boolean)},
+   analysis:{mode:'raw-intensity',features:series.map(feature),series}
+  };
+ },
+ restore(snapshot){
+  if(!snapshot||snapshot.version!==1||typeof snapshot.name!=='string'||!Array.isArray(snapshot.sheets)||!snapshot.sheets.length||
+   !snapshot.sheets.every(sheet=>sheet&&typeof sheet.name==='string'&&Array.isArray(sheet.rows)&&sheet.rows.every(Array.isArray))||
+   new Set(snapshot.sheets.map(sheet=>sheet.name)).size!==snapshot.sheets.length||!snapshot.settings||
+   !Number.isFinite(Number(snapshot.settings.from))||!Number.isFinite(Number(snapshot.settings.to))||
+   Number(snapshot.settings.from)>=Number(snapshot.settings.to)||
+   !['single','cross'].includes(snapshot.settings.compare)||!['individual','average','both'].includes(snapshot.settings.replicate)||
+   !Array.isArray(snapshot.settings.crossSheets)||!Array.isArray(snapshot.settings.crossSamples)||!Array.isArray(snapshot.settings.selected))
+   throw cloudAdapterError('儲存的分析資料格式無效。','Invalid saved analysis.');
+  const nextSheets=Object.fromEntries(snapshot.sheets.map(sheet=>[sheet.name,{_rows:sheet.rows}]));
+  if(!Object.hasOwn(nextSheets,snapshot.settings.sheet))throw cloudAdapterError('儲存的工作表不存在。','Saved worksheet is missing.');
+  workbook={SheetNames:snapshot.sheets.map(sheet=>sheet.name),Sheets:nextSheets};
+  demoDataLoaded=false;csvImported=false;cloudSourceName=snapshot.name;crossCache.clear();
+  $('from').value=snapshot.settings.from;$('to').value=snapshot.settings.to;
+  $('replicateMode').value=snapshot.settings.replicate;$('compareMode').value=snapshot.settings.compare;
+  $('sheet').innerHTML=workbook.SheetNames.map(name=>`<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+  $('sheet').value=snapshot.settings.sheet;
+  $('crossControls').hidden=snapshot.settings.compare!=='cross';
+  $('sheet').disabled=snapshot.settings.compare==='cross';
+  populateCross();
+  if(snapshot.settings.compare==='cross'){
+   document.querySelectorAll('.cross-sheet').forEach(e=>{e.checked=snapshot.settings.crossSheets.includes(e.dataset.sheet)});
+   document.querySelectorAll('.cross-sample').forEach(e=>{e.checked=snapshot.settings.crossSamples.some(s=>s.sheet===e.dataset.sheet&&s.col===e.dataset.col)});
+   analyzeCross();
+   $('wave').disabled=true;
+  }else{
+   parseSheet(snapshot.settings.sheet);
+   if([...$('wave').options].some(option=>option.value===snapshot.settings.wave)){$('wave').value=snapshot.settings.wave;analyze()}
+  }
+  selected=new Set(series.map((item,index)=>snapshot.settings.selected.includes(item.key||item.name)?index:-1).filter(index=>index>=0));
+  render();
+ }
 };
 applyLanguage(currentLanguage);draw();

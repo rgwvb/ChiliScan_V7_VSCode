@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="css/classifier.css">
   <script defer src="js/xlsx.full.min.js"></script>
   <script defer src="js/classifier.js"></script>
+  <script defer src="js/cloud.js"></script>
 </head>
 <body>
   <div class="wrap">
@@ -22,8 +23,9 @@
       </div>
     </header>
 
+    <div id="analysisView">
     <div class="intro" data-i18n="intro">
-      使用 600–660 nm 衍生吸光度參考曲線進行新鮮、蟲害與腐爛比對。所有結果都需要人工複核，尚未完成獨立驗證；資料只在此瀏覽器處理，不能作為食品安全或產品放行依據。
+      使用 600–660 nm 衍生吸光度參考曲線進行新鮮、蟲害與腐爛比對。所有結果都需要人工複核，尚未完成獨立驗證；分析在瀏覽器進行，使用者可選擇儲存至雲端。不能作為食品安全或產品放行依據。
     </div>
     <p class="warning" data-i18n="factoryIncomplete">工廠端改版尚未完成資料追溯與量測檢查，請勿用於實際工廠判定。</p>
 
@@ -90,6 +92,7 @@
         <div class="result-grid" id="resultList"></div>
       </section>
     </main>
+    </div>
   </div>
 </body>
 </html>

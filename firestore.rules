@@ -1,0 +1,24 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Replace the placeholder with Firebase Authentication UIDs of authorized users.
+    function authorized(userId) {
+      return request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.firebase.sign_in_provider == 'google.com'
+        && request.auth.token.email_verified == true
+        && request.auth.uid in ['REPLACE_WITH_AUTHENTICATION_UID'];
+    }
+
+    match /users/{userId}/chiliscanRecords/{recordId} {
+      allow read, create: if authorized(userId);
+      allow update: if authorized(userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sheetSyncStatus', 'sheetSyncedAt'])
+        && request.resource.data.sheetSyncStatus == 'synced'
+        && request.resource.data.sheetSyncedAt is string;
+      match /chunks/{chunkId} {
+        allow read, create: if authorized(userId);
+      }
+    }
+  }
+}

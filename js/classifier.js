@@ -5,7 +5,7 @@
     .forEach((key) => localStorage.removeItem(key));
 
   // 本模組處理新鮮／腐爛吸光度頁：讀取參考與待測檔、計算 RMSE 相對相似度並更新畫面。
-  // 光譜處理與分類都在瀏覽器執行，不會上傳資料。
+  // 光譜處理與分類在瀏覽器執行；使用者可選擇儲存快照到雲端。
   const BAND_MIN = 600;
   const BAND_MAX = 660;
   const MIN_SHARED_WAVELENGTHS = 40;
@@ -19,8 +19,8 @@
     backToSpectrum: ['返回光譜分析', 'Back to Spectral Analysis'],
     factoryIncomplete: ['工廠端改版尚未完成資料追溯與量測檢查，請勿用於實際工廠判定。', 'The factory redesign lacks complete data traceability and measurement checks. Do not use it for factory decisions.'],
     intro: [
-      '使用 600–660 nm 衍生吸光度參考曲線進行新鮮、蟲害與腐爛比對。所有結果都需要人工複核，尚未完成獨立驗證；資料只在此瀏覽器處理，不能作為食品安全或產品放行依據。',
-      'Compare derived absorbance spectra at 600–660 nm against fresh, pest-damaged and rotten references. All results require manual review; independent validation is incomplete. Data stays in this browser. Do not use results for food-safety or product-release decisions.'
+      '使用 600–660 nm 衍生吸光度參考曲線進行新鮮、蟲害與腐爛比對。所有結果都需要人工複核，尚未完成獨立驗證；分析在瀏覽器進行，使用者可選擇儲存至雲端。不能作為食品安全或產品放行依據。',
+      'Compare derived absorbance spectra at 600–660 nm against fresh, pest-damaged and rotten references. All results require manual review; independent validation is incomplete. Analysis runs in the browser; saving to the cloud is optional. Do not use results for food-safety or product-release decisions.'
     ],
     referenceTitle: ['01　載入參考資料（首次使用或更新時）', '01  Load Reference Data (first use or when updating)'],
     referenceHint: [
@@ -119,8 +119,8 @@
       'Only {count} shared valid wavelengths; at least {minimum} are required.'
     ],
     queryComplete: [
-      '完成：{classified}/{total} 個樣本可比對，均需人工複核；{insufficient} 個樣本資料不足。全程在此瀏覽器處理。{ignoredNotice}',
-      'Complete: {classified}/{total} samples compared, all require manual review; {insufficient} had insufficient data. All processing stays in this browser. {ignoredNotice}'
+      '完成：{classified}/{total} 個樣本可比對，均需人工複核；{insufficient} 個樣本資料不足。分析在瀏覽器進行。{ignoredNotice}',
+      'Complete: {classified}/{total} samples compared, all require manual review; {insufficient} had insufficient data. Analysis runs in this browser. {ignoredNotice}'
     ],
     queryFailed: ['無法判斷：{detail}', 'Classification failed: {detail}'],
     fresh: ['新鮮', 'Fresh'],
@@ -141,6 +141,8 @@
   let referenceSet = null;
   let queryFile = null;
   let latestResults = null;
+  let referenceSheets = null;
+  let querySheets = null;
   let referenceStatusState = { key: 'referenceNotLoaded', values: {}, isError: false };
   let queryStatusState = { key: 'queryWaiting', values: {}, isError: false };
 
@@ -551,6 +553,9 @@
     }
 
     referenceSet = nextReference;
+    referenceSheets = workbook.SheetNames.map((name) => ({
+      name, rows: XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: null, raw: true })
+    }));
     renderValidation(validation);
     const freshCount = vectors.filter((sample) => sample.label === 'fresh').length;
     const pestCount = vectors.filter((sample) => sample.label === 'pest').length;
@@ -643,6 +648,8 @@
     showQueryState('queryProcessing');
     $('classify').disabled = true;
     $('resultsPanel').hidden = true;
+    latestResults = null;
+    querySheets = null;
     try {
       const workbook = XLSX.read(await queryFile.arrayBuffer(), { type: 'array' });
       const mode = $('queryMode').value;
@@ -692,6 +699,9 @@
       });
 
       const classifiedCount = results.filter((result) => !result.error).length;
+      querySheets = workbook.SheetNames.map((name) => ({
+        name, rows: XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: null, raw: true })
+      }));
       showQueryState('queryComplete', {
         classified: classifiedCount,
         total: results.length,
@@ -728,6 +738,8 @@
     if (!file) return;
     $('loadReference').disabled = true;
     referenceSet = null;
+    referenceSheets = null;
+    querySheets = null;
     latestResults = null;
     $('validationStatus').hidden = true;
     $('resultsPanel').hidden = true;
@@ -746,6 +758,8 @@
     try {
       localStorage.removeItem(STORAGE_KEY);
       referenceSet = null;
+      referenceSheets = null;
+      querySheets = null;
       latestResults = null;
       $('validationStatus').hidden = true;
       $('resultsPanel').hidden = true;
@@ -758,6 +772,9 @@
 
   $('queryFile').addEventListener('change', (event) => {
     queryFile = event.target.files[0] || null;
+    latestResults = null;
+    querySheets = null;
+    $('resultsPanel').hidden = true;
     $('queryFilename').textContent = queryFile ? queryFile.name : formatMessage('queryFilePlaceholder');
     showQueryState(queryFile ? 'queryFileReady' : 'queryWaiting');
     updateButtons();
@@ -770,6 +787,74 @@
     });
   });
 
+  function cloudAdapterError(zh, en) {
+    const error = new Error(language === 'en' ? en : zh);
+    error.cloudMessage = [zh, en];
+    return error;
+  }
+
+  window.chiliCloudAdapter = {
+    page: 'classification',
+    capture() {
+      if (!referenceSet || !referenceSheets) {
+        throw cloudAdapterError('請先重新載入原始參考檔，再儲存至雲端。', 'Reload the original reference file before saving.');
+      }
+      return {
+        version: 1,
+        name: queryFile && latestResults ? queryFile.name : referenceSet.dataVersion,
+        reference: { dataVersion: referenceSet.dataVersion, correction: referenceSet.correction, sheets: referenceSheets },
+        query: latestResults && querySheets ? {
+          name: queryFile.name, mode: $('queryMode').value, correction: $('queryCorrection').value, sheets: querySheets
+        } : null,
+        results: latestResults ? latestResults.map((result) => ({
+          name: result.name,
+          sharedCount: result.sharedCount ?? null,
+          prediction: result.prediction ?? null,
+          error: result.error ? { key: result.error.translationKey, values: result.error.translationValues } : null
+        })) : null
+      };
+    },
+    async restore(snapshot) {
+      const validSheets = (sheets) => Array.isArray(sheets) && sheets.length > 0 &&
+        sheets.every((sheet) => sheet && typeof sheet.name === 'string' &&
+          Array.isArray(sheet.rows) && sheet.rows.every(Array.isArray)) &&
+        new Set(sheets.map((sheet) => sheet.name)).size === sheets.length;
+      if (!snapshot || snapshot.version !== 1 || !snapshot.reference ||
+          typeof snapshot.reference.dataVersion !== 'string' || !snapshot.reference.dataVersion.trim() ||
+          !['white', 'dark'].includes(snapshot.reference.correction) || !validSheets(snapshot.reference.sheets) ||
+          (snapshot.query && (typeof snapshot.query.name !== 'string' || !validSheets(snapshot.query.sheets) ||
+            !['absorbance', 'intensity', 'intensity-dark'].includes(snapshot.query.mode) ||
+            snapshot.query.correction !== snapshot.reference.correction))) {
+        throw cloudAdapterError('儲存的比對資料格式無效。', 'Invalid saved classification.');
+      }
+      const makeFile = (name, sheets) => {
+        const workbook = XLSX.utils.book_new();
+        sheets.forEach((sheet) => XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(sheet.rows), sheet.name));
+        return new File([XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })], name, {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        });
+      };
+      $('referenceVersion').value = snapshot.reference.dataVersion;
+      $('referenceCorrection').value = snapshot.reference.correction;
+      await loadReferenceFile(makeFile('reference.xlsx', snapshot.reference.sheets));
+      latestResults = null;
+      querySheets = null;
+      queryFile = null;
+      $('resultsPanel').hidden = true;
+      if (snapshot.query) {
+        queryFile = makeFile(snapshot.query.name, snapshot.query.sheets);
+        $('queryMode').value = snapshot.query.mode;
+        $('queryCorrection').value = snapshot.query.correction;
+        $('queryFilename').textContent = queryFile.name;
+        await classifyFile();
+        if (!latestResults) throw cloudAdapterError('無法還原比對結果，請檢查資料。', 'Could not restore classification results.');
+      } else {
+        $('queryFilename').textContent = formatMessage('queryFilePlaceholder');
+        showQueryState('queryWaiting');
+        updateButtons();
+      }
+    }
+  };
   document.querySelectorAll('.language-switch button[data-lang]').forEach((button) => {
     button.addEventListener('click', () => applyLanguage(button.dataset.lang));
   });
